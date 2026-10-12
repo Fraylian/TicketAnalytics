@@ -1,0 +1,32 @@
+@* Chips de filtros activos: muestra qué está filtrando y permite quitarlos uno a uno. *@
+@if (Filtros is { Count: > 0 })
+{
+    <div class="ta-filtros-activos ta-enter mt-2">
+        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
+            @Filtros.Count @(Filtros.Count == 1 ? "filtro activo" : "filtros activos")
+        </MudText>
+        @foreach (var f in Filtros)
+        {
+            <span class="ta-chip-filtro">
+                @f.Texto
+                <button type="button" aria-label="@($"Quitar filtro {f.Texto}")" @onclick="@(() => Quitar(f))">
+                    <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                </button>
+            </span>
+        }
+        @if (Filtros.Count > 1 && OnLimpiarTodo.HasDelegate)
+        {
+            <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="OnLimpiarTodo">Limpiar todo</MudButton>
+        }
+    </div>
+}
+
+@code {
+    public record FiltroActivo(string Clave, string Texto);
+
+    [Parameter] public List<FiltroActivo>? Filtros { get; set; }
+    [Parameter] public EventCallback<FiltroActivo> OnQuitar { get; set; }
+    [Parameter] public EventCallback OnLimpiarTodo { get; set; }
+
+    private async Task Quitar(FiltroActivo f) { if (OnQuitar.HasDelegate) await OnQuitar.InvokeAsync(f); }
+}

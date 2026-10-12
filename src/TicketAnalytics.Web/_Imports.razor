@@ -1,0 +1,21 @@
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.WebAssembly.Http
+@using Microsoft.JSInterop
+@using MudBlazor
+@using ApexCharts
+@using TicketAnalytics.Web
+@using TicketAnalytics.Web.Models
+@using TicketAnalytics.Web.Services
+@using TicketAnalytics.Web.Shared
+@using TicketAnalytics.Web.Layout
+
+@* MudBlazor y ApexCharts definen ambos Color y Size. Estos alias resuelven
+   la ambigüedad: Color y Size sin calificar = MudBlazor (lo usa casi todo).
+   Un alias de tipo gana sobre el 'using' de namespace, así CS0104 desaparece
+   sin tocar cada página. Los colores de ApexCharts se pasan como List<string>
+   de hex, y los grosores como int, así que no se necesita ApexCharts.Color/Size. *@
+@using Color = MudBlazor.Color
+@using Size = MudBlazor.Size

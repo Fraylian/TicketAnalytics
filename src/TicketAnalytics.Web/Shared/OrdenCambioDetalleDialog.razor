@@ -1,0 +1,57 @@
+@* Detalle de una orden de cambio con sus tickets y datos de vencimiento. *@
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2" Class="mb-2">
+            <Campo Label="Estado" Valor="@Orden.EstadoOC" />
+            <Campo Label="Analista" Valor="@(Orden.AsignatarioOC ?? "Sin asignar")" />
+            <Campo Label="Categoría" Valor="@Orden.CategoriaOC" />
+            <Campo Label="Complejidad" Valor="@(Orden.ComplejidadOC ?? "Sin asignar")" />
+            <Campo Label="Apertura" Valor="@Orden.FechaAperturaOC?.ToString("dd/MM/yyyy")" />
+            <Campo Label="Vencimiento" Valor="@(Orden.FechaVencimientoOC?.ToString("dd/MM/yyyy") ?? "Sin fecha")" />
+            <Campo Label="Cierre" Valor="@(Orden.FechaCierreOC?.ToString("dd/MM/yyyy") ?? "Abierta")" />
+            <Campo Label="Días restantes" Valor="@(Orden.DiasRestantes?.ToString() ?? "—")" />
+        </MudGrid>
+
+        <div class="mb-2">
+            <EstadoVencimientoChip Estado="@Orden.EstadoVencimiento" DiasRestantes="@Orden.DiasRestantes" />
+            @if (Orden.PctTiempoConsumido.HasValue)
+            {
+                <div class="barra-tiempo mt-2">
+                    <span class="@(Orden.PctTiempoConsumido >= 100 ? "tiempo-vencido" : Orden.PctTiempoConsumido >= 80 ? "tiempo-riesgo" : "tiempo-ok")"
+                          style="@($"width:{Math.Min(Orden.PctTiempoConsumido.Value,100)}%")"></span>
+                </div>
+                <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">@($"{Orden.PctTiempoConsumido:0}% del tiempo consumido")</MudText>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(Orden.ResumenOC))
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-2">Resumen</MudText>
+            <MudText Typo="Typo.body2">@Orden.ResumenOC</MudText>
+        }
+
+        <MudText Typo="Typo.subtitle2" Class="mt-3">Tickets relacionados (@Orden.CantidadTickets)</MudText>
+        @if (Orden.Tickets.Any())
+        {
+            <MudTable Items="Orden.Tickets" Dense="true" Elevation="0" Breakpoint="Breakpoint.None">
+                <HeaderContent><MudTh>Ticket</MudTh><MudTh>Tipo</MudTh><MudTh>Estado</MudTh><MudTh>SLA</MudTh></HeaderContent>
+                <RowTemplate>
+                    <MudTd><b>@context.NoTicket</b></MudTd>
+                    <MudTd>@context.TipoCaso</MudTd>
+                    <MudTd>@context.Estado</MudTd>
+                    <MudTd><MudChip T="string" Size="Size.Small" Color="@(context.ResueltoDentroSLA == "SI" ? Color.Success : context.ResueltoDentroSLA == "NO" ? Color.Error : Color.Default)">@context.ResueltoDentroSLA</MudChip></MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else { <MudText Typo="Typo.caption">Sin tickets relacionados.</MudText> }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public OrdenCambioConTicketsDto Orden { get; set; } = default!;
+    private void Cerrar() => MudDialog.Close();
+}

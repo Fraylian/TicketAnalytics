@@ -1,0 +1,81 @@
+@* CRUD de proveedor: contacto, email, teléfono y SLA por severidad. *@
+@inject TicketAnalyticsApi Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_req.Nombre" Label="Nombre del proveedor *" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_req.Contacto" Label="Contacto" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_req.Email" Label="Email" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Email" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_req.Telefono" Label="Teléfono" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Phone" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudText Typo="Typo.subtitle2" Class="mt-2">SLA de respuesta por severidad (en horas)</MudText>
+                <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Deja vacío si el proveedor no maneja ese nivel. Para días, multiplica × 24 (2 días = 48).</MudText>
+            </MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_req.SlaCriticoHoras" Label="Crítico" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_req.SlaAltoHoras" Label="Alto" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_req.SlaMedioHoras" Label="Medio" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int?" @bind-Value="_req.SlaBajoHoras" Label="Bajo" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+
+            <MudItem xs="12">
+                <MudCheckBox T="bool" @bind-Value="_req.Activo" Label="Proveedor activo" Color="Color.Success" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Guardar" Disabled="_guardando">
+            @(_guardando ? "Guardando…" : "Guardar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public ProveedorCatalogoDto? Existente { get; set; }
+
+    private GuardarProveedorRequest _req = new();
+    private bool _guardando;
+
+    protected override void OnInitialized()
+    {
+        if (Existente is not null)
+        {
+            _req = new GuardarProveedorRequest
+            {
+                ProveedorId = Existente.ProveedorId, Nombre = Existente.Nombre, Contacto = Existente.Contacto,
+                Email = Existente.Email, Telefono = Existente.Telefono, Activo = Existente.Activo,
+                SlaCriticoHoras = Existente.SlaCriticoHoras, SlaAltoHoras = Existente.SlaAltoHoras,
+                SlaMedioHoras = Existente.SlaMedioHoras, SlaBajoHoras = Existente.SlaBajoHoras
+            };
+        }
+    }
+
+    private async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_req.Nombre)) { Snackbar.Add("El nombre es obligatorio", Severity.Warning); return; }
+        _guardando = true;
+        try
+        {
+            await Api.CatalogoGuardarAsync(_req);
+            Snackbar.Add("Proveedor guardado", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

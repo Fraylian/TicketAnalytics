@@ -1,0 +1,662 @@
+@page "/reporte-vp"
+@using TicketAnalytics.Web.Shared
+@inject TicketAnalyticsApi Api
+@inject FileDownloadService Descargas
+@inject CatalogoCache Catalogo
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Reporte mensual al VP</PageTitle>
+
+<!-- ===== Header ejecutivo ===== -->
+<div class="ta-header-ejecutivo ta-enter mb-4">
+    <div>
+        <h1>Reporte mensual al VP</h1>
+        <div class="periodo">@(_d?.PeriodoTexto ?? "—")</div>
+        <div class="meta">
+            @if (_cargando) { <span>Cargando…</span> }
+            else if (_actualizando) { <span>Actualizando…</span> }
+            else { <span>Actualizado @_ultimaCarga.ToString("HH:mm:ss") · @_d?.TotalCasos casos</span> }
+        </div>
+    </div>
+    <div class="d-flex align-center gap-2 flex-wrap">
+        <MudSelect T="string" Value="_periodo" ValueChanged="OnPeriodoChanged" Dense="true" Variant="Variant.Outlined"
+                   Style="min-width:170px;background:rgba(255,255,255,.12);border-radius:8px"
+                   Label="Período" Margin="Margin.Dense">
+            @foreach (var p in _periodos)
+            {
+                <MudSelectItem T="string" Value="@p">@TextoPeriodo(p)</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTooltip Text="Actualizar">
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Inherit"
+                           aria-label="Actualizar" OnClick="@(() => Cargar(false))" Disabled="_actualizando" />
+        </MudTooltip>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" Disabled="_exportando"
+                   StartIcon="@(_exportando ? null : Icons.Material.Filled.TableView)" OnClick="ExportarExcel">
+            @if (_exportando)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Generando…</span>
+            }
+            else { <span>Exportar Excel</span> }
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="AgregarCaso">Agregar caso</MudButton>
+    </div>
+</div>
+
+@if (_error is not null)
+{
+    <ErrorState Mensaje="@_error.Mensaje" Detalle="@_error.Detalle"
+                Secundario="Revisa la conexión con la API e intenta de nuevo."
+                OnReintentar="@(() => Cargar(true))" />
+}
+else
+{
+    <!-- ===== Filtros ===== -->
+    <MudPaper Elevation="0" Class="pa-3 mb-3"
+              Style="border:1px solid var(--bsc-borde);border-radius:var(--radius-md)">
+        <MudGrid Spacing="2" Class="align-center">
+            <MudItem xs="12" md="4">
+                <MudTextField T="string" Value="_texto" ValueChanged="OnTextoChanged" Immediate="true"
+                              Label="Buscar caso, nota o categoría" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="int?" Value="_categoriaId" ValueChanged="OnCategoriaChanged" Clearable="true"
+                           Label="Categoría" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var c in _categorias)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)c.CategoriaId)">@c.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="int?" Value="_estado" ValueChanged="OnEstadoChanged" Clearable="true"
+                           Label="Estado" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var e in EstadosVP.Todos)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)e.Valor)">@e.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="2">
+                <MudSwitch T="bool" Value="_soloProveedor" ValueChanged="OnProveedorChanged"
+                           Color="Color.Primary" Label="Con proveedor" />
+            </MudItem>
+        </MudGrid>
+
+        <ActiveFilterChips Filtros="_filtrosActivos" OnQuitar="QuitarFiltro" OnLimpiarTodo="LimpiarFiltros" />
+    </MudPaper>
+
+    <!-- ===== KPIs ===== -->
+    <MudGrid Spacing="3" Class="mb-4 ta-enter-1">
+        @if (_cargando)
+        {
+            @for (var i = 0; i < 6; i++)
+            {
+                <MudItem xs="6" md="4" lg="2"><KpiCard Cargando="true" /></MudItem>
+            }
+        }
+        else
+        {
+            @foreach (var k in _d!.Kpis)
+            {
+                <MudItem xs="6" md="4" lg="2">
+                    <KpiCard Titulo="@k.Titulo" Valor="@k.Valor.ToString()"
+                             Icono="@IconoKpi(k.Clave)" Acento="@AcentoKpi(k.Clave)"
+                             Delta="k.Delta" ComparadoCon="@MesCorto(_d.PeriodoAnteriorTexto)"
+                             DeltaPositivoEsMalo="@(k.Clave is "pendientes" or "atencion")"
+                             Sparkline="@SparkDe(k.Clave)"
+                             OnClick="@(() => DrillKpi(k.Clave))" />
+                </MudItem>
+            }
+        }
+    </MudGrid>
+
+    @if (!_cargando && _d is not null)
+    {
+        <!-- ===== Resumen narrativo ===== -->
+        <div class="ta-narrativa mb-4 ta-enter-2">
+            <div class="d-flex align-center gap-2 mb-1">
+                <MudIcon Icon="@Icons.Material.Filled.Summarize" Size="Size.Small" Color="Color.Primary" />
+                <MudText Typo="Typo.subtitle2"><b>Resumen del período</b></MudText>
+            </div>
+            <MudText Typo="Typo.body2">@_d.ResumenEjecutivo</MudText>
+        </div>
+
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4"
+                 @bind-ActivePanelIndex="_tab">
+
+            <!-- ======== Vista ejecutiva ======== -->
+            <MudTabPanel Text="Vista ejecutiva" Icon="@Icons.Material.Filled.Dashboard">
+                <MudGrid Spacing="3" Class="mb-4">
+                    <MudItem xs="12" lg="7">
+                        <ChartPanel Titulo="Casos por categoría y estado" Nota="Clic en una barra para filtrar por estado">
+                            @if (!_d.Categorias.Any()) { <EmptyState Mensaje="Sin datos para el período." /> }
+                            else
+                            {
+                                <div class="pa-2">
+                                    @foreach (var c in _d.Categorias)
+                                    {
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-space-between align-center mb-1">
+                                                <MudText Typo="Typo.body2"><b>@c.Categoria</b></MudText>
+                                                <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
+                                                    @c.Total @(c.Total == 1 ? "caso" : "casos") · @Pct(c.Total)%
+                                                </MudText>
+                                            </div>
+                                            <div class="ta-barra-estados">
+                                                @foreach (var e in EstadosVP.Todos.Where(e => c.PorEstado.ContainsKey(e.Nombre)))
+                                                {
+                                                    var n = c.PorEstado[e.Nombre];
+                                                    var w = c.Total == 0 ? 0 : n * 100.0 / c.Total;
+                                                    <MudTooltip Text="@($"{e.Nombre}: {n} de {c.Total}")">
+                                                        <span style="@($"width:{w.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%;background:{e.Color};cursor:pointer")"
+                                                              @onclick="@(() => FiltrarPorEstado(e.Valor))"></span>
+                                                    </MudTooltip>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </ChartPanel>
+                    </MudItem>
+
+                    <MudItem xs="12" lg="5">
+                        <ChartPanel Titulo="Distribución por estado" Nota="Clic en una fila para filtrar">
+                            @if (!_d.PorEstado.Any()) { <EmptyState Mensaje="Sin datos para el período." /> }
+                            else
+                            {
+                                <div class="pa-2">
+                                    @foreach (var e in _d.PorEstado)
+                                    {
+                                        <div class="d-flex align-center gap-2 mb-2 ta-clickable"
+                                             @onclick="@(() => FiltrarPorEstado(e.Estado))">
+                                            <span style="@($"width:10px;height:10px;border-radius:3px;background:{e.Color}")"></span>
+                                            <MudText Typo="Typo.body2" Style="min-width:110px">@e.Nombre</MudText>
+                                            <div style="flex:1;height:8px;background:var(--bsc-superficie-3);border-radius:999px;overflow:hidden">
+                                                <div style="@($"width:{e.Porcentaje.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%;height:100%;background:{e.Color};transition:width var(--transition-slow)")"></div>
+                                            </div>
+                                            <MudText Typo="Typo.caption" Style="min-width:78px;text-align:right;color:var(--texto-secundario)">
+                                                @e.Cantidad · @e.Porcentaje%
+                                            </MudText>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </ChartPanel>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <ChartPanel Titulo="Evolución de los últimos 6 meses" Nota="Casos incluidos y completados por mes">
+                            <div class="d-flex align-end gap-3 pa-3" style="height:170px">
+                                @foreach (var p in _d.Tendencia)
+                                {
+                                    var maxT = Math.Max(1, _d.Tendencia.Max(x => x.Total));
+                                    var hT = p.Total * 120.0 / maxT;
+                                    var hC = p.Completados * 120.0 / maxT;
+                                    <div class="d-flex flex-column align-center" style="flex:1">
+                                        <MudTooltip Text="@($"{p.Etiqueta}: {p.Total} casos · {p.Completados} completados")">
+                                            <div class="d-flex align-end gap-1" style="height:124px">
+                                                <div style="@($"width:16px;height:{hT.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;background:var(--bsc-azul);border-radius:4px 4px 0 0;transition:height var(--transition-slow)")"></div>
+                                                <div style="@($"width:16px;height:{hC.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}px;background:var(--op-cumplido);border-radius:4px 4px 0 0;transition:height var(--transition-slow)")"></div>
+                                            </div>
+                                        </MudTooltip>
+                                        <MudText Typo="Typo.caption" Class="mt-1" Style="color:var(--texto-secundario)">@p.Etiqueta</MudText>
+                                    </div>
+                                }
+                            </div>
+                            <div class="d-flex gap-4 px-3 pb-2">
+                                <div class="d-flex align-center gap-1">
+                                    <span style="width:10px;height:10px;border-radius:3px;background:var(--bsc-azul)"></span>
+                                    <MudText Typo="Typo.caption">Total</MudText>
+                                </div>
+                                <div class="d-flex align-center gap-1">
+                                    <span style="width:10px;height:10px;border-radius:3px;background:var(--op-cumplido)"></span>
+                                    <MudText Typo="Typo.caption">Completados</MudText>
+                                </div>
+                            </div>
+                        </ChartPanel>
+                    </MudItem>
+                </MudGrid>
+
+                <!-- Bloques por categoría -->
+                <div class="ta-section-header">
+                    <div>
+                        <h2>Casos por categoría</h2>
+                        <p>Expande una categoría para revisarla en la reunión</p>
+                    </div>
+                </div>
+
+                @if (!_d.Categorias.Any())
+                {
+                    <EmptyState Icono="@Icons.Material.Filled.Inbox"
+                                Mensaje="@($"No hay casos para {_d.PeriodoTexto}.")" />
+                }
+                else
+                {
+                    @foreach (var c in _d.Categorias)
+                    {
+                        <div class="ta-cat-bloque" style="@($"--cat-color:{c.Color ?? "#15528E"}")">
+                            <div class="ta-cat-head" @onclick="@(() => Alternar(c.Categoria))">
+                                <div>
+                                    <div class="ta-cat-nombre">@c.Categoria</div>
+                                    <div class="ta-cat-total">@c.Total @(c.Total == 1 ? "caso" : "casos")</div>
+                                </div>
+                                <div class="d-flex align-center gap-2 flex-wrap">
+                                    @foreach (var kv in c.PorEstado)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                                 Style="@($"color:{ColorEstadoNombre(kv.Key)};font-weight:600")">
+                                            @kv.Key @kv.Value
+                                        </MudChip>
+                                    }
+                                    <MudIcon Icon="@(_abiertas.Contains(c.Categoria) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" />
+                                </div>
+                            </div>
+
+                            @if (_abiertas.Contains(c.Categoria))
+                            {
+                                @foreach (var caso in c.Casos)
+                                {
+                                    <div class="ta-caso ta-enter">
+                                        <div class="d-flex justify-space-between align-start gap-3 flex-wrap">
+                                            <div style="flex:1;min-width:240px">
+                                                <div class="d-flex align-center gap-2 flex-wrap">
+                                                    <span class="ta-caso-ref">@caso.RefNum</span>
+                                                    <MudChip T="string" Size="Size.Small"
+                                                             Style="@($"background:{caso.EstadoColor};color:#fff")">@caso.EstadoTexto</MudChip>
+                                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@caso.TipoTexto</MudChip>
+                                                    @if (caso.ReportadoProveedor == 1)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning">
+                                                            @(caso.Proveedor ?? "Proveedor")
+                                                        </MudChip>
+                                                    }
+                                                    @if (!string.IsNullOrWhiteSpace(caso.Jira))
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info">@caso.Jira</MudChip>
+                                                    }
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(caso.Resumen))
+                                                {
+                                                    <MudText Typo="Typo.body2" Class="mt-1">@Corto(caso.Resumen, 160)</MudText>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(caso.NotaEjecutiva))
+                                                {
+                                                    <div class="ta-caso-nota"><b>Nota:</b> @caso.NotaEjecutiva</div>
+                                                }
+                                                <MudText Typo="Typo.caption" Class="mt-1" Style="color:var(--texto-tenue)">
+                                                    @(caso.Responsable ?? "Sin responsable")
+                                                    @if (caso.UltimaActualizacion.HasValue)
+                                                    {
+                                                        <span> · actualizado @caso.UltimaActualizacion.Value.ToString("dd/MM/yyyy")</span>
+                                                    }
+                                                </MudText>
+                                            </div>
+                                            <div class="d-flex align-center gap-1">
+                                                <MudTooltip Text="Editar caso">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                                                   aria-label="Editar caso" OnClick="@(() => EditarCaso(caso))" />
+                                                </MudTooltip>
+                                                <MudTooltip Text="Sacar del reporte">
+                                                    <MudIconButton Icon="@Icons.Material.Filled.RemoveCircleOutline" Size="Size.Small"
+                                                                   Color="Color.Error" aria-label="Sacar del reporte"
+                                                                   OnClick="@(() => QuitarCaso(caso))" />
+                                                </MudTooltip>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                }
+            </MudTabPanel>
+
+            <!-- ======== Tabla ======== -->
+            <MudTabPanel Text="Tabla" Icon="@Icons.Material.Filled.TableRows">
+                <MudTable Items="_d.Casos" Dense="true" Hover="true" Striped="false" Elevation="0"
+                          Breakpoint="Breakpoint.Md" FixedHeader="true" Height="60vh"
+                          Class="ta-tabla-sticky" Filter="null">
+                    <HeaderContent>
+                        <MudTh>Caso</MudTh>
+                        <MudTh>Tipo</MudTh>
+                        <MudTh>Resumen</MudTh>
+                        <MudTh>Categoría VP</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh>Responsable</MudTh>
+                        <MudTh>Proveedor</MudTh>
+                        <MudTh>Actualizado</MudTh>
+                        <MudTh>Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Caso"><b>@context.RefNum</b></MudTd>
+                        <MudTd DataLabel="Tipo">@context.TipoTexto</MudTd>
+                        <MudTd DataLabel="Resumen" Style="max-width:320px">
+                            <MudTooltip Text="@(context.Resumen ?? "")">
+                                <MudText Typo="Typo.body2" Style="white-space:normal">@Corto(context.Resumen, 90)</MudText>
+                            </MudTooltip>
+                        </MudTd>
+                        <MudTd DataLabel="Categoría VP">@context.CategoriaVP</MudTd>
+                        <MudTd DataLabel="Estado">
+                            <MudChip T="string" Size="Size.Small" Style="@($"background:{context.EstadoColor};color:#fff")">
+                                @context.EstadoTexto
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Responsable">@(context.Responsable ?? "—")</MudTd>
+                        <MudTd DataLabel="Proveedor">@(context.Proveedor ?? context.ReportadoProveedorTexto)</MudTd>
+                        <MudTd DataLabel="Actualizado">@(context.UltimaActualizacion?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
+                        <MudTd DataLabel="Acciones">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           aria-label="Editar" OnClick="@(() => EditarCaso(context))" />
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <EmptyState Mensaje="No hay casos con estos filtros." />
+                    </NoRecordsContent>
+                </MudTable>
+            </MudTabPanel>
+        </MudTabs>
+    }
+}
+
+@code {
+    private ReporteVPOverviewDto? _d;
+    private List<CategoriaVPDto> _categorias = new();
+    private List<string> _periodos = new();
+    private readonly HashSet<string> _abiertas = new();
+
+    private string _periodo = "";
+    private string? _texto;
+    private int? _categoriaId;
+    private int? _estado;
+    private bool _soloProveedor;
+    private int _tab;
+
+    private bool _cargando = true;
+    private bool _actualizando;
+    private bool _exportando;
+    private DateTime _ultimaCarga = DateTime.Now;
+    // Clase simple en vez de tupla nullable: Razor no puede leer .Mensaje
+    // directamente sobre un Nullable<ValueTuple>.
+    private sealed class ErrorVista
+    {
+        public string Mensaje { get; init; } = "";
+        public string? Detalle { get; init; }
+    }
+
+    private ErrorVista? _error;
+
+    private CancellationTokenSource? _cts;
+    private Timer? _debounce;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Filtros desde la URL (permite refrescar/compartir sin perder contexto)
+        var q = LeerQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (q.TryGetValue("periodo", out var per)) _periodo = per;
+        if (q.TryGetValue("estado", out var est) && int.TryParse(est, out var e)) _estado = e;
+        if (q.TryGetValue("categoria", out var cat) && int.TryParse(cat, out var c)) _categoriaId = c;
+
+        _categorias = await Catalogo.ObtenerAsync(CatalogoCache.CategoriasVP, () => Api.ReporteVPCategoriasAsync());
+        _periodos = await Api.ReporteVPPeriodosAsync();
+        if (string.IsNullOrWhiteSpace(_periodo))
+            _periodo = _periodos.FirstOrDefault() ?? $"{DateTime.Today:yyyy-MM}";
+
+        await Cargar(true);
+    }
+
+    /// <summary>Carga el overview cancelando la petición anterior (evita race conditions).</summary>
+    private async Task Cargar(bool primeraVez)
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
+
+        if (primeraVez) _cargando = true; else _actualizando = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            var f = new ReporteVPFiltro
+            {
+                Periodo = _periodo, CategoriaId = _categoriaId, Estado = _estado,
+                Texto = _texto, SoloConProveedor = _soloProveedor ? true : null
+            };
+            var datos = await Api.ReporteVPOverviewAsync(f, ct);
+            if (ct.IsCancellationRequested) return;    // llegó tarde: no piso datos nuevos
+
+            _d = datos;
+            _ultimaCarga = DateTime.Now;
+            if (_abiertas.Count == 0)
+                foreach (var c in _d.Categorias.Take(2)) _abiertas.Add(c.Categoria);
+        }
+        catch (OperationCanceledException) { /* reemplazada por una consulta más nueva */ }
+        catch (ApiException ex) { _error = new ErrorVista { Mensaje = ex.MensajeUsuario, Detalle = ex.DetalleTecnico }; }
+        catch (Exception) { _error = new ErrorVista { Mensaje = "No pudimos cargar el reporte del período." }; }
+        finally
+        {
+            if (!ct.IsCancellationRequested) { _cargando = false; _actualizando = false; StateHasChanged(); }
+        }
+    }
+
+    // ===== Filtros =====
+    private async Task OnPeriodoChanged(string p) { _periodo = p; SincronizarUrl(); await Cargar(false); }
+    private async Task OnCategoriaChanged(int? c) { _categoriaId = c; SincronizarUrl(); await Cargar(false); }
+    private async Task OnEstadoChanged(int? e) { _estado = e; SincronizarUrl(); await Cargar(false); }
+    private async Task OnProveedorChanged(bool v) { _soloProveedor = v; await Cargar(false); }
+
+    /// <summary>Búsqueda con debounce de 350 ms para no consultar en cada tecla.</summary>
+    private void OnTextoChanged(string t)
+    {
+        _texto = t;
+        _debounce?.Dispose();
+        _debounce = new Timer(async _ => await InvokeAsync(async () => await Cargar(false)),
+                              null, 350, Timeout.Infinite);
+    }
+
+    private void SincronizarUrl()
+    {
+        var q = new Dictionary<string, object?> { ["periodo"] = _periodo };
+        if (_estado.HasValue) q["estado"] = _estado.Value.ToString();
+        if (_categoriaId.HasValue) q["categoria"] = _categoriaId.Value.ToString();
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(q), replace: true);
+    }
+
+    private List<ActiveFilterChips.FiltroActivo> _filtrosActivos
+    {
+        get
+        {
+            var l = new List<ActiveFilterChips.FiltroActivo>();
+            if (_categoriaId.HasValue)
+                l.Add(new("categoria", _categorias.FirstOrDefault(c => c.CategoriaId == _categoriaId)?.Nombre ?? "Categoría"));
+            if (_estado.HasValue) l.Add(new("estado", EstadosVP.Nombre(_estado.Value)));
+            if (_soloProveedor) l.Add(new("proveedor", "Con proveedor"));
+            if (!string.IsNullOrWhiteSpace(_texto)) l.Add(new("texto", $"\"{_texto}\""));
+            return l;
+        }
+    }
+
+    private async Task QuitarFiltro(ActiveFilterChips.FiltroActivo f)
+    {
+        switch (f.Clave)
+        {
+            case "categoria": _categoriaId = null; break;
+            case "estado": _estado = null; break;
+            case "proveedor": _soloProveedor = false; break;
+            case "texto": _texto = null; break;
+        }
+        SincronizarUrl();
+        await Cargar(false);
+    }
+
+    private async Task LimpiarFiltros()
+    {
+        _categoriaId = null; _estado = null; _soloProveedor = false; _texto = null;
+        SincronizarUrl();
+        await Cargar(false);
+    }
+
+    private async Task FiltrarPorEstado(int estado)
+    {
+        _estado = _estado == estado ? null : estado;
+        SincronizarUrl();
+        await Cargar(false);
+    }
+
+    private async Task DrillKpi(string clave)
+    {
+        _estado = clave switch
+        {
+            "completados" => 4,
+            "pendientes" => 0,
+            "atencion" => 5,
+            _ => null
+        };
+        if (clave == "proveedor") { _soloProveedor = !_soloProveedor; _estado = null; }
+        if (clave == "proceso") { _estado = null; _tab = 1; }
+        SincronizarUrl();
+        await Cargar(false);
+    }
+
+    // ===== Acciones sobre casos =====
+    private async Task AgregarCaso()
+    {
+        var p = new DialogParameters { ["Periodo"] = _periodo, ["Categorias"] = _categorias };
+        var dlg = await DialogService.ShowAsync<CasoVPDialog>("Agregar caso al reporte", p,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var r = await dlg.Result;
+        if (!r.Canceled) { Snackbar.Add("Caso agregado al reporte", Severity.Success); await Cargar(false); }
+    }
+
+    private async Task EditarCaso(CasoReporteVPDto caso)
+    {
+        var p = new DialogParameters
+        {
+            ["Periodo"] = _periodo, ["Categorias"] = _categorias, ["Caso"] = caso
+        };
+        var dlg = await DialogService.ShowAsync<CasoVPDialog>($"Editar {caso.RefNum}", p,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var r = await dlg.Result;
+        if (!r.Canceled) { Snackbar.Add("Caso actualizado", Severity.Success); await Cargar(false); }
+    }
+
+    private async Task QuitarCaso(CasoReporteVPDto caso)
+    {
+        var ok = await DialogService.ShowMessageBox("Sacar del reporte",
+            $"¿Quitar {caso.RefNum} del reporte de {_d?.PeriodoTexto}? El seguimiento y su historial se conservan.",
+            yesText: "Quitar", cancelText: "Cancelar");
+        if (ok != true) return;
+
+        try
+        {
+            await Api.ReporteVPQuitarCasoAsync(caso.SeguimientoId);
+            Snackbar.Add($"{caso.RefNum} salió del reporte", Severity.Success);
+            await Cargar(false);
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+    }
+
+    private async Task ExportarExcel()
+    {
+        if (_exportando) return;
+        _exportando = true;
+        try
+        {
+            var f = new ReporteVPFiltro
+            {
+                Periodo = _periodo, CategoriaId = _categoriaId, Estado = _estado,
+                Texto = _texto, SoloConProveedor = _soloProveedor ? true : null
+            };
+            var bytes = await Api.ReporteVPExcelBytesAsync(f);
+            await Descargas.DescargarExcelAsync($"Reporte_VP_{_periodo}.xlsx", bytes);
+            Snackbar.Add("Excel del reporte generado", Severity.Success);
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception) { Snackbar.Add("No pudimos generar el Excel.", Severity.Error); }
+        finally { _exportando = false; }
+    }
+
+    // ===== Utilidades de presentación =====
+    private void Alternar(string cat)
+    {
+        if (!_abiertas.Add(cat)) _abiertas.Remove(cat);
+    }
+
+    private double Pct(int n) => _d is null || _d.TotalCasos == 0 ? 0 : Math.Round(n * 100.0 / _d.TotalCasos);
+
+    private static string ColorEstadoNombre(string nombre)
+        => EstadosVP.Todos.FirstOrDefault(e => e.Nombre == nombre)?.Color ?? "#667085";
+
+    private List<double>? SparkDe(string clave)
+    {
+        if (_d?.Tendencia is not { Count: > 1 }) return null;
+        return clave switch
+        {
+            "total" => _d.Tendencia.Select(t => (double)t.Total).ToList(),
+            "completados" => _d.Tendencia.Select(t => (double)t.Completados).ToList(),
+            _ => null
+        };
+    }
+
+    private static string IconoKpi(string clave) => clave switch
+    {
+        "total" => Icons.Material.Filled.Assignment,
+        "completados" => Icons.Material.Filled.TaskAlt,
+        "proceso" => Icons.Material.Filled.Autorenew,
+        "pendientes" => Icons.Material.Filled.Schedule,
+        "proveedor" => Icons.Material.Filled.Business,
+        "atencion" => Icons.Material.Filled.PriorityHigh,
+        _ => Icons.Material.Filled.Analytics
+    };
+
+    private static string AcentoKpi(string clave) => clave switch
+    {
+        "completados" => "cumplido",
+        "pendientes" => "riesgo",
+        "atencion" => "vencido",
+        "proveedor" => "riesgo",
+        _ => "azul"
+    };
+
+    private static string TextoPeriodo(string p)
+    {
+        if (!DateTime.TryParse($"{p}-01", out var d)) return p;
+        var cul = new System.Globalization.CultureInfo("es-DO");
+        var m = cul.DateTimeFormat.GetMonthName(d.Month);
+        return $"{char.ToUpper(m[0])}{m[1..]} {d.Year}";
+    }
+
+    private static string? MesCorto(string? periodoTexto)
+        => string.IsNullOrWhiteSpace(periodoTexto) ? null : periodoTexto.Split(' ')[0].ToLowerInvariant();
+
+    /// <summary>Parseo simple del query string (evita depender de QueryHelpers).</summary>
+    private static Dictionary<string, string> LeerQuery(string query)
+    {
+        var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var par in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var i = par.IndexOf('=');
+            if (i <= 0) continue;
+            d[Uri.UnescapeDataString(par[..i])] = Uri.UnescapeDataString(par[(i + 1)..]);
+        }
+        return d;
+    }
+
+    private static string Corto(string? t, int max)
+        => string.IsNullOrWhiteSpace(t) ? "—" : (t.Length > max ? t[..max] + "…" : t);
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _debounce?.Dispose();
+    }
+}

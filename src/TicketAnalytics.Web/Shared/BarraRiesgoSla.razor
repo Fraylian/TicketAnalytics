@@ -1,0 +1,54 @@
+@* SIGNATURE: proporción de riesgo SLA del período en una sola barra.
+   Lo primero que un VP necesita ver: cuánto está en rojo. *@
+
+<div class="barra-riesgo">
+    @if (Total == 0)
+    {
+        <div style="flex-grow:1;background:#EDF1F5;color:var(--texto-tenue);"><span>Sin datos en el período</span></div>
+    }
+    else
+    {
+        @if (Vencidos > 0)
+        {
+            <div class="riesgo-vencido" style="@Flex(Vencidos)" title="@Vencidos vencidos">
+                <span>@Vencidos vencidos</span>
+            </div>
+        }
+        @if (EnRiesgo > 0)
+        {
+            <div class="riesgo-riesgo" style="@Flex(EnRiesgo)" title="@EnRiesgo en riesgo">
+                <span>@EnRiesgo en riesgo</span>
+            </div>
+        }
+        @if (EnCurso > 0)
+        {
+            <div class="riesgo-curso" style="@Flex(EnCurso)" title="@EnCurso en curso">
+                <span>@EnCurso en curso</span>
+            </div>
+        }
+        @if (Cumplidos > 0)
+        {
+            <div class="riesgo-cumplido" style="@Flex(Cumplidos)" title="@Cumplidos cumplidos">
+                <span>@Cumplidos cumplidos</span>
+            </div>
+        }
+    }
+</div>
+
+<div class="leyenda-riesgo">
+    <div class="leyenda-item"><span class="leyenda-punto" style="background:var(--op-vencido)"></span>Vencidos · @Pct(Vencidos)</div>
+    <div class="leyenda-item"><span class="leyenda-punto" style="background:var(--op-riesgo)"></span>En riesgo (80%+ consumido) · @Pct(EnRiesgo)</div>
+    <div class="leyenda-item"><span class="leyenda-punto" style="background:var(--op-curso)"></span>En curso · @Pct(EnCurso)</div>
+    <div class="leyenda-item"><span class="leyenda-punto" style="background:var(--op-cumplido)"></span>Cumplidos · @Pct(Cumplidos)</div>
+</div>
+
+@code {
+    [Parameter] public int Vencidos { get; set; }
+    [Parameter] public int EnRiesgo { get; set; }
+    [Parameter] public int EnCurso { get; set; }
+    [Parameter] public int Cumplidos { get; set; }
+
+    private int Total => Vencidos + EnRiesgo + EnCurso + Cumplidos;
+    private string Flex(int n) => $"flex-grow:{n};";
+    private string Pct(int n) => Total == 0 ? "0%" : $"{Math.Round(100.0 * n / Total)}%";
+}

@@ -1,0 +1,380 @@
+@* Barra de filtros adaptada al contexto de cada página.
+   Solo muestra filtros que el backend realmente aplica, evita el ruido de
+   opciones que no vienen al caso y refleja lo activo con chips. *@
+@inject TicketAnalyticsApi Api
+@implements IDisposable
+
+<MudPaper Elevation="0" Class="pa-3 mb-4"
+          Style="border:1px solid var(--bsc-borde);border-radius:var(--radius-md)">
+
+    @* --- Atajos de período: lo que más se usa, a un clic --- *@
+    <div class="d-flex gap-2 mb-3 flex-wrap align-center">
+        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario);min-width:52px">Período:</MudText>
+        @foreach (var p in Periodos)
+        {
+            <MudChip T="string" Size="Size.Small" OnClick="@(() => AplicarPeriodo(p.Clave))"
+                     Style="@(_periodo == p.Clave
+                              ? "background:var(--bsc-azul);color:#fff;cursor:pointer;font-weight:600"
+                              : "background:transparent;color:var(--bsc-azul);border:1px solid var(--bsc-borde-fuerte);cursor:pointer")">
+                @p.Texto
+            </MudChip>
+        }
+    </div>
+
+    <MudGrid Spacing="2" AlignItems="Center">
+        @* --- Fechas: siempre presentes --- *@
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker Label="Desde" Date="Filtro.FechaDesde" DateChanged="OnDesdeChanged"
+                           DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker Label="Hasta" Date="Filtro.FechaHasta" DateChanged="OnHastaChanged"
+                           DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+        </MudItem>
+
+        @* --- Búsqueda: en las pantallas con listado --- *@
+        @if (Contexto is "tickets")
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudTextField T="string" Label="Buscar ticket, resumen o descripción" Value="Filtro.Texto"
+                              ValueChanged="OnTextoChanged" Immediate="true" Clearable="true"
+                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+            </MudItem>
+        }
+
+        @* --- Responsable: útil en todas menos Analistas (que ya es por persona) --- *@
+        @if (Contexto is not "analistas")
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudSelect T="string" Label="Responsable" Value="Filtro.AsignatarioNombre"
+                           ValueChanged="OnAsignatarioChanged" Clearable="true"
+                           Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var a in _analistas)
+                    {
+                        <MudSelectItem T="string" Value="@a">@a</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        }
+
+        @* --- Tipo de caso y SLA --- *@
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string" Label="Tipo de caso" Value="Filtro.TipoCaso" ValueChanged="OnTipoCasoChanged"
+                       Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("Incidente")">Incidente</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Solicitud")">Solicitud</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string" Label="Cumplimiento de SLA" Value="Filtro.EstadoSla" ValueChanged="OnSlaChanged"
+                       Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem T="string" Value="@("SI")">Dentro de SLA</MudSelectItem>
+                <MudSelectItem T="string" Value="@("NO")">Fuera de SLA</MudSelectItem>
+                <MudSelectItem T="string" Value="@("EN CURSO")">En curso</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        @* --- Filtros avanzados, según la pantalla --- *@
+        @if (_avanzados)
+        {
+            @if (Contexto is "tickets" or "dashboard")
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="int?" Label="Sistema afectado" Value="Filtro.Sistema" ValueChanged="OnSistemaChanged"
+                               Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var s in _catalogos.Sistemas)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)s.Valor)">@s.Nombre</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="int?" Label="Tipo de solución" Value="Filtro.TipoSolucion" ValueChanged="OnTipoSolucionChanged"
+                               Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (var t in _catalogos.TiposSolucion)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)t.Valor)">@t.Nombre</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="int?" Label="Reporte a proveedor" Value="Filtro.ReportadoProveedor"
+                               ValueChanged="OnReportadoProvChanged" Clearable="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="int?" Value="@((int?)1)">Reportado</MudSelectItem>
+                        <MudSelectItem T="int?" Value="@((int?)2)">Pendiente de escalar</MudSelectItem>
+                        <MudSelectItem T="int?" Value="@((int?)0)">Resuelto internamente</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="bool?" Label="Orden de cambio" Value="Filtro.ConOrdenCambio"
+                               ValueChanged="OnConOcChanged" Clearable="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="bool?" Value="@(true)">Con OC asociada</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="@(false)">Sin OC</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" Label="Complejidad de la OC" Value="Filtro.ComplejidadOC"
+                               ValueChanged="OnComplejidadChanged" Clearable="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="string" Value="@("Alta")">Alta (90 días)</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Media")">Media (60 días)</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Baja")">Baja (30 días)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="bool?" Label="Causa raíz" Value="Filtro.ConCausaRaiz"
+                               ValueChanged="OnCausaRaizChanged" Clearable="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="bool?" Value="@(true)">Identificada</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="@(false)">Sin identificar</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="bool?" Label="Reporte al VP" Value="Filtro.ReportadoVP"
+                               ValueChanged="OnVpChanged" Clearable="true"
+                               Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem T="bool?" Value="@(true)">Incluido en el reporte</MudSelectItem>
+                        <MudSelectItem T="bool?" Value="@(false)">No incluido</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            }
+
+            @if (Contexto is "tickets")
+            {
+                <MudItem xs="12" sm="6" md="3" Class="d-flex align-center">
+                    <MudCheckBox T="bool" Value="@(Filtro.SoloReqCerradoCambioPendiente == true)"
+                                 ValueChanged="OnReqCerradoChanged" Color="Color.Warning"
+                                 Label="Ticket cerrado con OC pendiente" />
+                </MudItem>
+            }
+        }
+
+        <MudItem xs="12" Class="d-flex justify-space-between align-center flex-wrap gap-2">
+            <div class="d-flex align-center gap-2">
+                <MudButton Variant="Variant.Text" Size="Size.Small"
+                           StartIcon="@(_avanzados ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.Tune)"
+                           OnClick="@(() => _avanzados = !_avanzados)">
+                    @(_avanzados ? "Menos filtros" : "Más filtros")
+                </MudButton>
+                @if (_cargando)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Actualizando…</MudText>
+                }
+            </div>
+            <div class="d-flex align-center gap-2">
+                @if (Activos.Any())
+                {
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Default"
+                               StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="LimpiarTodo">
+                        Limpiar
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Refresh" OnClick="Aplicar">
+                    Actualizar
+                </MudButton>
+            </div>
+        </MudItem>
+    </MudGrid>
+
+    @* --- Qué está filtrando ahora mismo --- *@
+    @if (Activos.Any())
+    {
+        <MudDivider Class="my-2" />
+        <div class="ta-filtros-activos">
+            <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
+                @Activos.Count @(Activos.Count == 1 ? "filtro activo" : "filtros activos")
+            </MudText>
+            @foreach (var a in Activos)
+            {
+                <span class="ta-chip-filtro">
+                    @a.Texto
+                    <button type="button" aria-label="@($"Quitar {a.Texto}")" @onclick="@(() => Quitar(a.Clave))">
+                        <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                    </button>
+                </span>
+            }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter] public TicketFiltro Filtro { get; set; } = new();
+    [Parameter] public EventCallback OnAplicar { get; set; }
+    /// <summary>tickets | dashboard | sla | analistas. Decide qué filtros tienen sentido.</summary>
+    [Parameter] public string Contexto { get; set; } = "tickets";
+    /// <summary>Si es true, cada cambio recarga solo; si no, hay que pulsar Actualizar.</summary>
+    [Parameter] public bool AutoAplicar { get; set; } = true;
+
+    private bool _avanzados;
+    private bool _cargando;
+    private string _periodo = "";
+    private List<string> _analistas = new();
+    private CatalogosGestionDto _catalogos = new();
+    private Timer? _debounce;
+
+    public record Periodo(string Clave, string Texto);
+
+    public static readonly Periodo[] Periodos =
+    {
+        new("hoy",       "Hoy"),
+        new("semana",    "Últimos 7 días"),
+        new("mes",       "Este mes"),
+        new("mesant",    "Mes pasado"),
+        new("trimestre", "Últimos 3 meses"),
+        new("anio",      "Este año")
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _analistas = await Api.GrupoAnalistasAsync(); } catch { }
+        if (Contexto is "tickets" or "dashboard")
+        {
+            try { _catalogos = await Api.CatalogosGestionAsync(); } catch { }
+        }
+    }
+
+    // ===== Atajos de período =====
+    // ===== Atajos de período =====
+    private async Task AplicarPeriodo(string clave)
+    {
+        var hoy = DateTime.Today;
+        _periodo = _periodo == clave ? "" : clave;
+
+        // La tupla se tipa explícitamente como nullable: sin esto, C# no puede
+        // inferir un tipo común entre las ramas (DateTime, DateTime) y (null, null).
+        (DateTime? Desde, DateTime? Hasta) rango = _periodo switch
+        {
+            "hoy" => (hoy, hoy),
+            "semana" => (hoy.AddDays(-6), hoy),
+            "mes" => (new DateTime(hoy.Year, hoy.Month, 1), hoy),
+            "mesant" => (new DateTime(hoy.Year, hoy.Month, 1).AddMonths(-1),
+                            new DateTime(hoy.Year, hoy.Month, 1).AddDays(-1)),
+            "trimestre" => (hoy.AddMonths(-3), hoy),
+            "anio" => (new DateTime(hoy.Year, 1, 1), hoy),
+            _ => (null, null)
+        };
+
+        Filtro.FechaDesde = rango.Desde;
+        Filtro.FechaHasta = rango.Hasta;
+
+        await Aplicar();
+    }
+
+    // ===== Cambios de filtro: recargan solos =====
+    private Task OnDesdeChanged(DateTime? v) { Filtro.FechaDesde = v; _periodo = ""; return AplicarSiAuto(); }
+    private Task OnHastaChanged(DateTime? v) { Filtro.FechaHasta = v; _periodo = ""; return AplicarSiAuto(); }
+    private Task OnAsignatarioChanged(string? v) { Filtro.AsignatarioNombre = v; return AplicarSiAuto(); }
+    private Task OnTipoCasoChanged(string? v) { Filtro.TipoCaso = v; return AplicarSiAuto(); }
+    private Task OnSlaChanged(string? v) { Filtro.EstadoSla = v; return AplicarSiAuto(); }
+    private Task OnSistemaChanged(int? v) { Filtro.Sistema = v; return AplicarSiAuto(); }
+    private Task OnTipoSolucionChanged(int? v) { Filtro.TipoSolucion = v; return AplicarSiAuto(); }
+    private Task OnReportadoProvChanged(int? v) { Filtro.ReportadoProveedor = v; return AplicarSiAuto(); }
+    private Task OnConOcChanged(bool? v) { Filtro.ConOrdenCambio = v; return AplicarSiAuto(); }
+    private Task OnComplejidadChanged(string? v) { Filtro.ComplejidadOC = v; return AplicarSiAuto(); }
+    private Task OnCausaRaizChanged(bool? v) { Filtro.ConCausaRaiz = v; return AplicarSiAuto(); }
+    private Task OnVpChanged(bool? v) { Filtro.ReportadoVP = v; return AplicarSiAuto(); }
+    private Task OnReqCerradoChanged(bool v) { Filtro.SoloReqCerradoCambioPendiente = v ? true : null; return AplicarSiAuto(); }
+
+    /// <summary>El texto espera 400 ms para no consultar en cada tecla.</summary>
+    private void OnTextoChanged(string? v)
+    {
+        Filtro.Texto = v;
+        _debounce?.Dispose();
+        _debounce = new Timer(async _ => await InvokeAsync(Aplicar), null, 400, Timeout.Infinite);
+    }
+
+    private Task AplicarSiAuto() => AutoAplicar ? Aplicar() : Task.CompletedTask;
+
+    private async Task Aplicar()
+    {
+        Filtro.Page = 1;              // cualquier cambio vuelve a la primera página
+        _cargando = true;
+        StateHasChanged();
+        try { await OnAplicar.InvokeAsync(); }
+        finally { _cargando = false; StateHasChanged(); }
+    }
+
+    // ===== Chips de filtros activos =====
+    public record FiltroActivo(string Clave, string Texto);
+
+    private List<FiltroActivo> Activos
+    {
+        get
+        {
+            var l = new List<FiltroActivo>();
+            if (Filtro.FechaDesde.HasValue || Filtro.FechaHasta.HasValue)
+                l.Add(new("fechas", TextoFechas()));
+            if (!string.IsNullOrWhiteSpace(Filtro.Texto)) l.Add(new("texto", $"\"{Filtro.Texto}\""));
+            if (!string.IsNullOrWhiteSpace(Filtro.AsignatarioNombre)) l.Add(new("asignatario", Filtro.AsignatarioNombre!));
+            if (!string.IsNullOrWhiteSpace(Filtro.TipoCaso)) l.Add(new("tipocaso", Filtro.TipoCaso!));
+            if (!string.IsNullOrWhiteSpace(Filtro.EstadoSla)) l.Add(new("sla", TextoSla(Filtro.EstadoSla!)));
+            if (Filtro.Sistema is { } sis)
+                l.Add(new("sistema", _catalogos.Sistemas.FirstOrDefault(x => x.Valor == sis)?.Nombre ?? "Sistema"));
+            if (Filtro.TipoSolucion is { } ts)
+                l.Add(new("tiposolucion", _catalogos.TiposSolucion.FirstOrDefault(x => x.Valor == ts)?.Nombre ?? "Solución"));
+            if (Filtro.ReportadoProveedor is { } rp)
+                l.Add(new("proveedor", rp switch { 1 => "Reportado a proveedor", 2 => "Pendiente de escalar", _ => "Resuelto internamente" }));
+            if (Filtro.ConOrdenCambio is { } oc) l.Add(new("conoc", oc ? "Con OC" : "Sin OC"));
+            if (!string.IsNullOrWhiteSpace(Filtro.ComplejidadOC)) l.Add(new("complejidad", $"Complejidad {Filtro.ComplejidadOC}"));
+            if (Filtro.ConCausaRaiz is { } cr) l.Add(new("causaraiz", cr ? "Con causa raíz" : "Sin causa raíz"));
+            if (Filtro.ReportadoVP is { } vp) l.Add(new("vp", vp ? "En reporte VP" : "Fuera del reporte VP"));
+            if (Filtro.SoloReqCerradoCambioPendiente == true) l.Add(new("reqcerrado", "Cerrado con OC pendiente"));
+            return l;
+        }
+    }
+
+    private string TextoFechas()
+    {
+        var d = Filtro.FechaDesde?.ToString("dd/MM/yyyy");
+        var h = Filtro.FechaHasta?.ToString("dd/MM/yyyy");
+        if (d is not null && h is not null) return $"{d} – {h}";
+        return d is not null ? $"Desde {d}" : $"Hasta {h}";
+    }
+
+    private static string TextoSla(string v) => v switch
+    {
+        "SI" => "Dentro de SLA",
+        "NO" => "Fuera de SLA",
+        _ => "SLA en curso"
+    };
+
+    private async Task Quitar(string clave)
+    {
+        switch (clave)
+        {
+            case "fechas": Filtro.FechaDesde = null; Filtro.FechaHasta = null; _periodo = ""; break;
+            case "texto": Filtro.Texto = null; break;
+            case "asignatario": Filtro.AsignatarioNombre = null; break;
+            case "tipocaso": Filtro.TipoCaso = null; break;
+            case "sla": Filtro.EstadoSla = null; break;
+            case "sistema": Filtro.Sistema = null; break;
+            case "tiposolucion": Filtro.TipoSolucion = null; break;
+            case "proveedor": Filtro.ReportadoProveedor = null; break;
+            case "conoc": Filtro.ConOrdenCambio = null; break;
+            case "complejidad": Filtro.ComplejidadOC = null; break;
+            case "causaraiz": Filtro.ConCausaRaiz = null; break;
+            case "vp": Filtro.ReportadoVP = null; break;
+            case "reqcerrado": Filtro.SoloReqCerradoCambioPendiente = null; break;
+        }
+        await Aplicar();
+    }
+
+    private async Task LimpiarTodo()
+    {
+        Filtro.FechaDesde = null; Filtro.FechaHasta = null; Filtro.Texto = null;
+        Filtro.AsignatarioNombre = null; Filtro.TipoCaso = null; Filtro.EstadoSla = null;
+        Filtro.Sistema = null; Filtro.TipoSolucion = null; Filtro.ReportadoProveedor = null;
+        Filtro.ConOrdenCambio = null; Filtro.ComplejidadOC = null; Filtro.ConCausaRaiz = null;
+        Filtro.ReportadoVP = null; Filtro.SoloReqCerradoCambioPendiente = null;
+        _periodo = "";
+        await Aplicar();
+    }
+
+    public void Dispose() => _debounce?.Dispose();
+}

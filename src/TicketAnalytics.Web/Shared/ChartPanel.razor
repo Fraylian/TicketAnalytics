@@ -1,0 +1,35 @@
+@* Contenedor estándar para gráficos: título con icono, cuerpo y manejo de vacío. *@
+<div class="panel" style="height:100%">
+    <div class="d-flex justify-space-between align-center mb-2">
+        <h2 class="panel-titulo mb-0">
+            @if (!string.IsNullOrEmpty(Icono))
+            {
+                <MudIcon Icon="@Icono" Size="Size.Small" Color="Color.Primary" />
+            }
+            @Titulo
+        </h2>
+        @ExtraHeader
+    </div>
+    @if (Vacio)
+    {
+        <EmptyState Mensaje="@MensajeVacio" Icono="@Icons.Material.Filled.BarChart" />
+    }
+    else
+    {
+        @ChildContent
+    }
+    @if (!string.IsNullOrEmpty(Nota))
+    {
+        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">@Nota</MudText>
+    }
+</div>
+
+@code {
+    [Parameter] public string Titulo { get; set; } = "";
+    [Parameter] public string? Icono { get; set; }
+    [Parameter] public bool Vacio { get; set; }
+    [Parameter] public string MensajeVacio { get; set; } = "Sin datos para el período.";
+    [Parameter] public string? Nota { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? ExtraHeader { get; set; }
+}

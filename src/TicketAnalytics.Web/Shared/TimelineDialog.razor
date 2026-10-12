@@ -1,0 +1,113 @@
+@inject TicketAnalyticsApi Api
+
+<MudDialog>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(ResumenHoras))
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2" Icon="@Icons.Material.Filled.Schedule">
+                <b>Horas dedicadas:</b> @ResumenHoras
+                @if (DetalleTecnicos is not null && DetalleTecnicos.Any())
+                {
+                    <div class="mt-1 d-flex flex-wrap gap-1">
+                        @foreach (var t in DetalleTecnicos)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">@t</MudChip>
+                        }
+                    </div>
+                }
+            </MudAlert>
+            <MudDivider Class="my-3" />
+        }
+
+        @if (_reportes.Any())
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2"><MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Small" Color="Color.Primary" /> Reportado a proveedor</MudText>
+            @foreach (var r in _reportes)
+            {
+                <MudAlert Severity="Severity.Normal" Dense="true" Class="mb-2" Icon="@Icons.Material.Filled.Business">
+                    <div class="d-flex justify-space-between align-center flex-wrap gap-1">
+                        <span><b>@r.Proveedor</b> · @r.Titulo</span>
+                        <div class="d-flex gap-1">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@r.Urgencia</MudChip>
+                            @if (r.CumplioSla == true) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-cumplido);color:#fff">SLA OK</MudChip> }
+                            else if (r.CumplioSla == false) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-vencido);color:#fff">SLA NO</MudChip> }
+                        </div>
+                    </div>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@r.FechaReporte.ToString("dd/MM/yyyy") · @r.ResponsableInterno @(string.IsNullOrEmpty(r.NumeroCasoExterno) ? "" : $"· caso {r.NumeroCasoExterno}")</MudText>
+                </MudAlert>
+            }
+            <MudDivider Class="my-3" />
+        }
+
+        @if (_cargando)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else if (!_historial.Any())
+        {
+            <MudText Class="pa-4">Sin actualizaciones registradas.</MudText>
+        }
+        else
+        {
+            <MudTimeline TimelinePosition="TimelinePosition.Start">
+                @foreach (var a in _historial)
+                {
+                    <MudTimelineItem Color="@TipoColor(a.TipoActualizacion)" Size="Size.Small">
+                        <ItemContent>
+                            <div class="d-flex justify-space-between align-center">
+                                <MudChip T="string" Size="Size.Small" Color="@TipoColor(a.TipoActualizacion)" Variant="Variant.Text">@a.TipoActualizacion</MudChip>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@a.CreadoEn.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+                            </div>
+                            <MudText Typo="Typo.body2" Class="mt-1">@a.Contenido</MudText>
+                            @if (a.EtapaNueva.HasValue)
+                            {
+                                <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Filled.ArrowForward" Color="Color.Primary" Variant="Variant.Outlined" Class="mt-1">
+                                    @(a.EtapaAnterior.HasValue ? EtapasSeguimiento.Texto(a.EtapaAnterior.Value) + " → " : "")@EtapasSeguimiento.Texto(a.EtapaNueva.Value)
+                                </MudChip>
+                            }
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mt-1">por @a.Autor</MudText>
+                        </ItemContent>
+                    </MudTimelineItem>
+                }
+            </MudTimeline>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cerrar">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string RefNum { get; set; } = default!;
+    [Parameter] public string? ResumenHoras { get; set; }
+    [Parameter] public List<string>? DetalleTecnicos { get; set; }
+    private List<ActualizacionDto> _historial = new();
+    private List<ReporteProveedorMatrizDto> _reportes = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tHist = Api.HistorialAsync(RefNum);
+            var tRep = Api.MatrizPorTicketAsync(RefNum);
+            await Task.WhenAll(tHist, tRep);
+            _historial = tHist.Result;
+            _reportes = tRep.Result;
+        }
+        finally { _cargando = false; }
+    }
+
+    private static Color TipoColor(string tipo) => tipo switch
+    {
+        "Bloqueo" => Color.Error,
+        "Decisión" => Color.Warning,
+        "Validación" or "Resultado" => Color.Success,
+        "Prueba" => Color.Info,
+        "Creación" => Color.Secondary,
+        _ => Color.Primary
+    };
+
+    private void Cerrar() => MudDialog.Close();
+}

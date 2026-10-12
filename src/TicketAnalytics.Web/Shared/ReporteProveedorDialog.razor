@@ -1,0 +1,171 @@
+@* Formulario para crear/editar un reporte de proveedor (con o sin ticket del sistema). *@
+@inject TicketAnalyticsApi Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="6">
+                <MudSelect T="int" Value="_req.ProveedorId" ValueChanged="OnProveedorChanged" Label="Proveedor *" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true">
+                    @foreach (var p in Proveedores)
+                    {
+                        <MudSelectItem T="int" Value="@p.ProveedorId">@p.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudDatePicker Label="Fecha de reporte *" @bind-Date="_fecha" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_req.RefNumSistema" Label="Ticket / OC del sistema (opcional)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Link" HelperText="Déjalo vacío si no hay ticket" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="_req.NumeroCasoExterno" Label="Caso / ticket del proveedor" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_req.Titulo" Label="Título del caso *" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_req.Descripcion" Label="Descripción / detalle del caso" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="3" />
+            </MudItem>
+
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" Value="_req.Urgencia" ValueChanged="OnSeveridadChanged" Label="Severidad" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var u in SlaProveedorCatalogo.Severidades)
+                    {
+                        <MudSelectItem T="string" Value="@u">@u</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4" Class="d-flex align-center">
+                <MudAlert Severity="Severity.Info" Dense="true" Class="py-1" Style="width:100%">
+                    SLA ref.: <b>@SlaReferenciaTexto</b>
+                </MudAlert>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="int" @bind-Value="_req.Estado" Label="Estado" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem T="int" Value="0">Abierto</MudSelectItem>
+                    <MudSelectItem T="int" Value="1">En espera de respuesta</MudSelectItem>
+                    <MudSelectItem T="int" Value="2">Respuesta recibida</MudSelectItem>
+                    <MudSelectItem T="int" Value="3">En seguimiento</MudSelectItem>
+                    <MudSelectItem T="int" Value="4">Resuelto</MudSelectItem>
+                    <MudSelectItem T="int" Value="5">Cerrado</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudDatePicker Label="Fecha primera respuesta del proveedor" @bind-Date="_fechaResp" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                               HelperText="@(HorasRespuestaTexto)" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="string" @bind-Value="_req.ResponsableInterno" Label="Responsable (quien reportó) *" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                           AdornmentIcon="@Icons.Material.Filled.Person">
+                    @foreach (var r in Responsables)
+                    {
+                        <MudSelectItem T="string" Value="@r">@r</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12">
+                <div class="pa-2" style="background:rgba(21,82,142,.04);border-radius:8px">
+                    <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Evaluación del usuario</MudText>
+                    <div class="d-flex flex-wrap gap-3 mt-1">
+                        <MudCheckBox T="bool" Value="@(_req.BrindoAsistencia == true)" ValueChanged="@((bool v) => _req.BrindoAsistencia = v)" Label="Brindó asistencia" Color="Color.Success" />
+                        <MudCheckBox T="bool" Value="@(_req.EntregoCambio == true)" ValueChanged="@((bool v) => _req.EntregoCambio = v)" Label="Entregó cambio" Color="Color.Success" />
+                        <MudCheckBox T="bool" Value="@(_req.CumplioSla == true)" ValueChanged="@((bool v) => _req.CumplioSla = v)" Label="¿Cumplió el SLA?" Color="Color.Primary" />
+                    </div>
+                </div>
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_req.ResultadoSolucion" Label="Agenda / dónde está la solución" Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Guardar" Disabled="_guardando">
+            @(_guardando ? "Guardando…" : "Guardar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<ProveedorCatalogoDto> Proveedores { get; set; } = new();
+    [Parameter] public List<string> Responsables { get; set; } = new();
+    [Parameter] public ReporteProveedorMatrizDto? Existente { get; set; }
+    [Parameter] public string? Usuario { get; set; }
+
+    private GuardarReporteProveedorRequest _req = new();
+    private DateTime? _fecha = DateTime.Today;
+    private DateTime? _fechaResp;
+    private bool _guardando;
+
+    private ProveedorCatalogoDto? ProvSel => Proveedores.FirstOrDefault(p => p.ProveedorId == _req.ProveedorId);
+    private int? SlaReferencia => ProvSel?.SlaPara(_req.Urgencia);
+    private string SlaReferenciaTexto => SlaReferencia.HasValue
+        ? (SlaReferencia.Value % 24 == 0 && SlaReferencia.Value >= 24 ? $"{SlaReferencia.Value / 24} día(s)" : $"{SlaReferencia.Value} horas")
+        : "No definido";
+    private string HorasRespuestaTexto
+    {
+        get
+        {
+            if (!_fecha.HasValue || !_fechaResp.HasValue) return "";
+            var h = (_fechaResp.Value - _fecha.Value).TotalHours;
+            return $"Tardó ~{h:0} h en responder";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (Existente is not null)
+        {
+            _req = new GuardarReporteProveedorRequest
+            {
+                ReporteId = Existente.ReporteId, ProveedorId = Existente.ProveedorId,
+                RefNumSistema = Existente.RefNumSistema, TipoVinculo = Existente.TipoVinculo,
+                NumeroCasoExterno = Existente.NumeroCasoExterno, Titulo = Existente.Titulo, Descripcion = Existente.Descripcion,
+                FechaReporte = Existente.FechaReporte, Urgencia = Existente.Urgencia,
+                BrindoAsistencia = Existente.BrindoAsistencia, EntregoCambio = Existente.EntregoCambio, CumplioSla = Existente.CumplioSla,
+                Estado = Existente.Estado, ResponsableInterno = Existente.ResponsableInterno, ResultadoSolucion = Existente.ResultadoSolucion
+            };
+            _fecha = Existente.FechaReporte;
+            _fechaResp = Existente.FechaPrimeraRespuesta;
+        }
+        else
+        {
+            _req.ResponsableInterno = Usuario;
+        }
+    }
+
+    private void OnProveedorChanged(int id) { _req.ProveedorId = id; StateHasChanged(); }
+    private void OnSeveridadChanged(string s) { _req.Urgencia = s; StateHasChanged(); }
+
+    private async Task Guardar()
+    {
+        if (_req.ProveedorId == 0) { Snackbar.Add("Selecciona un proveedor", Severity.Warning); return; }
+        if (string.IsNullOrWhiteSpace(_req.Titulo)) { Snackbar.Add("El título es obligatorio", Severity.Warning); return; }
+        if (string.IsNullOrWhiteSpace(_req.ResponsableInterno)) { Snackbar.Add("Indica el responsable", Severity.Warning); return; }
+
+        _guardando = true;
+        _req.FechaReporte = _fecha ?? DateTime.Today;
+        _req.FechaPrimeraRespuesta = _fechaResp;
+        _req.SlaHorasRespuesta = SlaReferencia;
+        _req.Usuario = Usuario;
+        try
+        {
+            await Api.MatrizGuardarAsync(_req);
+            Snackbar.Add("Reporte guardado", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

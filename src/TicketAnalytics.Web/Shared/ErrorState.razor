@@ -1,0 +1,39 @@
+@* Estado de error reutilizable: mensaje amigable, detalle técnico plegable y reintento. *@
+<div class="d-flex flex-column align-center justify-center pa-6 ta-enter"
+     style="border:1px dashed var(--bsc-borde);border-radius:var(--radius-md);background:var(--bsc-superficie)">
+    <MudIcon Icon="@Icono" Size="Size.Large" Style="color:var(--op-vencido);opacity:.8" />
+    <MudText Typo="Typo.subtitle1" Class="mt-2" Style="color:var(--texto-primario)"><b>@Mensaje</b></MudText>
+    @if (!string.IsNullOrWhiteSpace(Secundario))
+    {
+        <MudText Typo="Typo.body2" Class="mt-1" Style="color:var(--texto-secundario)">@Secundario</MudText>
+    }
+    @if (OnReintentar.HasDelegate)
+    {
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="OnReintentar">Reintentar</MudButton>
+    }
+    @if (!string.IsNullOrWhiteSpace(Detalle))
+    {
+        <MudButton Variant="Variant.Text" Size="Size.Small" Class="mt-2"
+                   OnClick="@(() => _verDetalle = !_verDetalle)">
+            @(_verDetalle ? "Ocultar detalle técnico" : "Ver detalle técnico")
+        </MudButton>
+        @if (_verDetalle)
+        {
+            <MudText Typo="Typo.caption" Class="mt-1 pa-2"
+                     Style="color:var(--texto-tenue);background:var(--bsc-superficie-3);border-radius:var(--radius-sm);max-width:640px;white-space:pre-wrap">
+                @Detalle
+            </MudText>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string Mensaje { get; set; } = "No pudimos actualizar los datos.";
+    [Parameter] public string? Secundario { get; set; }
+    [Parameter] public string? Detalle { get; set; }
+    [Parameter] public string Icono { get; set; } = Icons.Material.Filled.CloudOff;
+    [Parameter] public EventCallback OnReintentar { get; set; }
+
+    private bool _verDetalle;
+}

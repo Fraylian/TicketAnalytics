@@ -1,0 +1,22 @@
+@* Estado vacío reutilizable con icono, mensaje y acción opcional. *@
+<div class="vacio">
+    <MudIcon Icon="@Icono" Size="Size.Large" Class="vacio-icono" Style="@($"color:{ColorIcono}")" />
+    <MudText Typo="Typo.body1">@Mensaje</MudText>
+    @if (!string.IsNullOrEmpty(Detalle))
+    {
+        <MudText Typo="Typo.caption" Class="mt-1">@Detalle</MudText>
+    }
+    @if (OnAccion.HasDelegate && !string.IsNullOrEmpty(TextoAccion))
+    {
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Class="mt-3" OnClick="OnAccion">@TextoAccion</MudButton>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icono { get; set; } = Icons.Material.Filled.Inbox;
+    [Parameter] public string Mensaje { get; set; } = "Sin datos.";
+    [Parameter] public string? Detalle { get; set; }
+    [Parameter] public string ColorIcono { get; set; } = "var(--texto-tenue)";
+    [Parameter] public string? TextoAccion { get; set; }
+    [Parameter] public EventCallback OnAccion { get; set; }
+}

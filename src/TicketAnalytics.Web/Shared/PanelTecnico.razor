@@ -1,0 +1,261 @@
+@* Panel de trabajo de un técnico: sus casos listados con las mismas columnas
+   que la cola de CA Service Desk, con sub-filtros rápidos por vencimiento. *@
+@inject TicketAnalyticsApi Api
+
+<MudPaper Elevation="0" Class="pa-4 mt-3 ta-enter"
+          Style="border:1px solid var(--bsc-borde);border-radius:var(--radius-md)">
+
+    <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-3">
+        <div>
+            <MudText Typo="Typo.h6" Style="color:var(--texto-primario)">@Tecnico</MudText>
+            <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
+                @(_cargando ? "Cargando casos…" : $"{_total} {(EsOrdenCambio ? "órdenes de cambio" : "tickets")} · vista: {EtiquetaVista()}")
+            </MudText>
+        </div>
+        <div class="d-flex gap-1">
+            <MudTooltip Text="Exportar lo que se ve">
+                <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small"
+                               aria-label="Exportar" OnClick="Exportar" Disabled="_cargando || _total == 0" />
+            </MudTooltip>
+            <MudTooltip Text="Cerrar panel">
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                               aria-label="Cerrar" OnClick="OnCerrar" />
+            </MudTooltip>
+        </div>
+    </div>
+
+    @* Sub-filtros rápidos: mismas categorías del semáforo *@
+    <div class="d-flex gap-2 mb-3 flex-wrap">
+        @foreach (var v in Vistas)
+        {
+            <MudChip T="string" Size="Size.Small" OnClick="@(() => CambiarVista(v.Clave))"
+                     Style="@(_vista == v.Clave
+                              ? $"background:{v.Color};color:#fff;cursor:pointer;font-weight:600"
+                              : $"background:transparent;color:{v.Color};border:1px solid {v.Color};cursor:pointer")">
+                @v.Texto
+            </MudChip>
+        }
+    </div>
+
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-3" />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Mensaje="@_error" OnReintentar="Cargar" />
+    }
+    else if (EsOrdenCambio && !_ocs.Any())
+    {
+        <EmptyState Mensaje="@($"No hay órdenes de cambio de {Tecnico} en esta vista.")" />
+    }
+    else if (!EsOrdenCambio && !_tickets.Any())
+    {
+        <EmptyState Mensaje="@($"No hay tickets de {Tecnico} en esta vista.")" />
+    }
+    else if (EsOrdenCambio)
+    {
+        <MudTable Items="_ocs" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky"
+                  Breakpoint="Breakpoint.Md" FixedHeader="true" Height="55vh">
+            <HeaderContent>
+                <MudTh>No. OC</MudTh>
+                <MudTh>Resumen</MudTh>
+                <MudTh>Categoría</MudTh>
+                <MudTh>Estado</MudTh>
+                <MudTh>Complejidad</MudTh>
+                <MudTh>Apertura</MudTh>
+                <MudTh>Vencimiento</MudTh>
+                <MudTh>Situación</MudTh>
+                <MudTh>Tickets</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="No. OC"><b>@context.NoOC</b></MudTd>
+                <MudTd DataLabel="Resumen" Style="max-width:300px">
+                    <MudTooltip Text="@(context.ResumenOC ?? "")">
+                        <MudText Typo="Typo.body2" Style="white-space:normal">@Corto(context.ResumenOC, 80)</MudText>
+                    </MudTooltip>
+                </MudTd>
+                <MudTd DataLabel="Categoría">@Corto(context.CategoriaOC, 40)</MudTd>
+                <MudTd DataLabel="Estado">@(context.EstadoOC ?? "—")</MudTd>
+                <MudTd DataLabel="Complejidad">@(context.ComplejidadOC ?? "—")</MudTd>
+                <MudTd DataLabel="Apertura">@(context.FechaAperturaOC?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
+                <MudTd DataLabel="Vencimiento">@(context.FechaVencimientoOC?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
+                <MudTd DataLabel="Situación">
+                    <EstadoVencimientoChip Estado="@context.EstadoVencimiento" DiasRestantes="context.DiasRestantes" />
+                </MudTd>
+                <MudTd DataLabel="Tickets">@context.CantidadTickets</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+    else
+    {
+        <MudTable Items="_tickets" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky"
+                  Breakpoint="Breakpoint.Md" FixedHeader="true" Height="55vh">
+            <HeaderContent>
+                <MudTh>Solicitud núm.</MudTh>
+                <MudTh>Resumen</MudTh>
+                <MudTh>Categoría</MudTh>
+                <MudTh>Estado</MudTh>
+                <MudTh>Usuario final afectado</MudTh>
+                <MudTh>Grupo</MudTh>
+                <MudTh>Fecha de apertura</MudTh>
+                <MudTh>Incumplimiento previsto</MudTh>
+                <MudTh>Situación</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Solicitud núm."><b>@context.NoTicket</b></MudTd>
+                <MudTd DataLabel="Resumen" Style="max-width:300px">
+                    <MudTooltip Text="@(context.Descripcion ?? "")">
+                        <MudText Typo="Typo.body2" Style="white-space:normal">@Corto(context.Descripcion, 80)</MudText>
+                    </MudTooltip>
+                </MudTd>
+                <MudTd DataLabel="Categoría">@Corto(context.Categoria, 40)</MudTd>
+                <MudTd DataLabel="Estado">@(context.Estado ?? "—")</MudTd>
+                <MudTd DataLabel="Usuario final afectado">@(context.UsuarioFinalAfectado ?? "—")</MudTd>
+                <MudTd DataLabel="Grupo">@(context.Grupo ?? "—")</MudTd>
+                <MudTd DataLabel="Fecha de apertura">@(context.FechaApertura?.ToString("dd/MM/yyyy HH:mm") ?? "—")</MudTd>
+                <MudTd DataLabel="Incumplimiento previsto">
+                    @(context.FechaVencimiento?.ToString("dd/MM/yyyy HH:mm") ?? "—")
+                </MudTd>
+                <MudTd DataLabel="Situación">
+                    <EstadoVencimientoChip Estado="@context.EstadoVencimiento" DiasRestantes="context.DiasParaVencer" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public string Tecnico { get; set; } = "";
+    /// <summary>true = listado de órdenes de cambio; false = listado de tickets.</summary>
+    [Parameter] public bool EsOrdenCambio { get; set; }
+    /// <summary>Vista inicial: todas | vencidas | mes | pronto | abiertas.</summary>
+    [Parameter] public string VistaInicial { get; set; } = "todas";
+    /// <summary>Mes/año de vencimiento a considerar en la vista "mes".</summary>
+    [Parameter] public int? Mes { get; set; }
+    [Parameter] public int? Anio { get; set; }
+    [Parameter] public EventCallback OnCerrar { get; set; }
+
+    private List<OrdenCambioConTicketsDto> _ocs = new();
+    private List<TicketEnriquecidoDto> _tickets = new();
+    private int _total;
+    private bool _cargando = true;
+    private string? _error;
+    private string _vista = "todas";
+    private string? _tecnicoCargado;
+
+    public record VistaRapida(string Clave, string Texto, string Color);
+
+    public static readonly VistaRapida[] Vistas =
+    {
+        new("todas",    "Todas",           "#15528E"),
+        new("abiertas", "Abiertas",        "#1976D2"),
+        new("vencidas", "Vencidas",        "#C62828"),
+        new("mes",      "Vencen este mes", "#ED6C02"),
+        new("pronto",   "Vencen en 7 días","#6B4EFF")
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Recargamos solo cuando cambia el técnico seleccionado.
+        if (_tecnicoCargado == Tecnico) return;
+        _tecnicoCargado = Tecnico;
+        _vista = VistaInicial;
+        await Cargar();
+    }
+
+    private async Task CambiarVista(string clave)
+    {
+        _vista = clave;
+        await Cargar();
+    }
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            if (EsOrdenCambio) await CargarOcAsync();
+            else await CargarTicketsAsync();
+        }
+        catch (ApiException ex) { _error = ex.MensajeUsuario; }
+        catch (Exception) { _error = "No pudimos cargar los casos de este técnico."; }
+        finally { _cargando = false; StateHasChanged(); }
+    }
+
+    private async Task CargarOcAsync()
+    {
+        var f = new OrdenCambioFiltro
+        {
+            AsignatarioNombre = Tecnico,
+            PageSize = 300,
+            OrderBy = "vencimiento"
+        };
+        AplicarVistaOc(f);
+
+        var r = await Api.BuscarOcAvanzadoAsync(f);
+        _ocs = r.Items.ToList();
+        _total = r.TotalCount;
+    }
+
+    private void AplicarVistaOc(OrdenCambioFiltro f)
+    {
+        switch (_vista)
+        {
+            case "abiertas": f.SoloAbiertas = true; break;
+            case "vencidas": f.Vencidas = true; break;
+            case "mes":
+                f.MesVencimiento = Mes ?? DateTime.Today.Month;
+                f.AnioVencimiento = Anio ?? DateTime.Today.Year;
+                break;
+            case "pronto": f.VencenEnDias = 7; break;
+        }
+    }
+
+    private async Task CargarTicketsAsync()
+    {
+        var f = new TicketFiltro
+        {
+            AsignatarioNombre = Tecnico,
+            PageSize = 300,
+            OrderBy = "fechaapertura",
+            OrderDesc = true
+        };
+        switch (_vista)
+        {
+            case "abiertas": f.SoloAbiertos = true; break;
+            case "vencidas": f.EstadoSla = "NO"; break;
+            case "mes":
+                var m = Mes ?? DateTime.Today.Month;
+                var a = Anio ?? DateTime.Today.Year;
+                f.FechaDesde = new DateTime(a, m, 1);
+                f.FechaHasta = new DateTime(a, m, 1).AddMonths(1).AddDays(-1);
+                break;
+            case "pronto": f.SoloAbiertos = true; break;
+        }
+
+        var r = await Api.BuscarTicketsAsync(f);
+        var items = r.Items.ToList();
+
+        // "Vencen en 7 días" se resuelve con el estado de vencimiento ya calculado.
+        if (_vista == "pronto")
+            items = items.Where(t => t.DiasParaVencer is >= 0 and <= 7).ToList();
+
+        _tickets = items;
+        _total = _vista == "pronto" ? items.Count : r.TotalCount;
+    }
+
+    private string EtiquetaVista()
+        => Vistas.FirstOrDefault(v => v.Clave == _vista)?.Texto ?? "Todas";
+
+    private async Task Exportar()
+    {
+        if (EsOrdenCambio) await CsvExport.DescargarOrdenesCambioAsync(_ocs);
+        else await CsvExport.DescargarTicketsAsync(_tickets);
+    }
+
+    private static string Corto(string? t, int max)
+        => string.IsNullOrWhiteSpace(t) ? "—" : (t.Length > max ? t[..max] + "…" : t);
+}

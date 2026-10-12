@@ -1,0 +1,610 @@
+@page "/ordenes-cambio"
+@inject TicketAnalyticsApi Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Órdenes de cambio · TicketAnalytics</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-2 flex-wrap gap-2">
+    <div>
+        <h1 class="seccion-titulo">Órdenes de cambio</h1>
+        <p class="seccion-bajada">Seguimiento, vencimientos y control por analista</p>
+    </div>
+    <div class="d-flex align-center gap-2">
+        <MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">
+            @(_ultimaActualizacion is null ? "" : $"Actualizado {_ultimaActualizacion:HH:mm:ss}")
+        </MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" OnClick="RecargarTodo" Disabled="_cargando" />
+    </div>
+</div>
+
+<!-- ===== Selector período + analista ===== -->
+<MudPaper Class="pa-3 mb-3" Elevation="0" Style="border:1px solid var(--bsc-borde);border-radius:12px;">
+    <MudGrid Spacing="2" AlignItems="Center">
+        <MudItem xs="6" md="2">
+            <MudSelect T="int" Value="_mes" ValueChanged="OnMesChanged" Label="Mes de vencimiento" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @for (int m = 1; m <= 12; m++)
+                {
+                    var mm = m;
+                    <MudSelectItem T="int" Value="@mm">@NombreMes(mm)</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" md="2">
+            <MudSelect T="int" Value="_anio" ValueChanged="OnAnioChanged" Label="Año" Variant="Variant.Outlined" Margin="Margin.Dense">
+                @for (int a = DateTime.Today.Year - 1; a <= DateTime.Today.Year + 1; a++)
+                {
+                    var aa = a;
+                    <MudSelectItem T="int" Value="@aa">@aa</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudAutocomplete T="string" Value="_analista" ValueChanged="OnAnalistaChanged" Label="Analista"
+                             SearchFunc="BuscarAnalista" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                             CoerceText="true" ResetValueOnEmptyText="true" AdornmentIcon="@Icons.Material.Filled.Person" />
+        </MudItem>
+        <MudItem xs="12" md="4" Class="d-flex gap-2">
+            <MudButton Variant="@(_filtrarPorMes ? Variant.Filled : Variant.Outlined)" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.CalendarMonth" OnClick="ToggleVencenEsteMes" Size="Size.Small">
+                Vencen en @NombreMes(_mes)
+            </MudButton>
+            <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="LimpiarFiltros" Size="Size.Small">Limpiar</MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @if (FiltrosActivos.Any())
+    {
+        <div class="filtros-activos">
+            @foreach (var (label, clear) in FiltrosActivos)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text"
+                         OnClose="@(() => clear())">@label</MudChip>
+            }
+        </div>
+    }
+</MudPaper>
+
+<!-- ===== Pestañas: Dashboard | Vencimientos | Listado ===== -->
+<MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" @bind-ActivePanelIndex="_tab">
+
+    <MudTabPanel Text="Dashboard" Icon="@Icons.Material.Filled.Dashboard">
+        @if (_cargando)
+        {
+            <MudGrid Spacing="3">
+                @for (var i = 0; i < 6; i++) { <MudItem xs="6" md="2"><MudSkeleton Height="120px" /></MudItem> }
+                <MudItem xs="12" md="8"><MudSkeleton Height="320px" /></MudItem>
+                <MudItem xs="12" md="4"><MudSkeleton Height="320px" /></MudItem>
+            </MudGrid>
+        }
+        else if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" ShowCloseIcon="true" CloseIconClicked="@(() => _error = null)">
+                @_error
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="RecargarTodo" Class="ml-2">Reintentar</MudButton>
+            </MudAlert>
+        }
+        else
+        {
+            @DashboardContent
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Control de vencimientos" Icon="@Icons.Material.Filled.Warning">
+        @if (_cargando) { <MudSkeleton Height="400px" /> }
+        else { @VencimientosContent }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Listado" Icon="@Icons.Material.Filled.TableRows">
+        @ListadoContent
+    </MudTabPanel>
+
+    <MudTabPanel Text="Por técnico" Icon="@Icons.Material.Filled.Groups">
+        @if (_cargando)
+        {
+            <MudSkeleton Height="120px" Class="mb-2" />
+            <MudSkeleton Height="300px" />
+        }
+        else
+        {
+            <MudGrid Spacing="3" Class="mb-4">
+                <MudItem xs="6" md="3"><KpiCard Titulo="Vencidas" Valor="@_tablero.Vencidas.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido" Nota="abiertas, pasó el SLA" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Vencen este mes" Valor="@_tablero.VencenEsteMes.ToString()" Icono="@Icons.Material.Filled.Event" Acento="riesgo" Nota="@($"{NombreMes(_mes)} {_anio}")" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Por vencer (7d)" Valor="@_tablero.VencenPronto.ToString()" Icono="@Icons.Material.Filled.HourglassBottom" Acento="riesgo" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="En curso" Valor="@_tablero.EnCurso.ToString()" Icono="@Icons.Material.Filled.Schedule" Acento="azul" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Cerradas" Valor="@_tablero.Completadas.ToString()" Icono="@Icons.Material.Filled.TaskAlt" Acento="cumplido" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Vence hoy" Valor="@_tablero.VenceHoy.ToString()" Icono="@Icons.Material.Filled.Today" Acento="vencido" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Sin fecha SLA" Valor="@_tablero.SinFecha.ToString()" Icono="@Icons.Material.Filled.HelpOutline" Acento="neutro" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Total OC" Valor="@_tablero.Total.ToString()" Icono="@Icons.Material.Filled.ChangeCircle" Acento="azul" /></MudItem>
+            </MudGrid>
+
+            <div class="panel">
+                <h2 class="panel-titulo mb-2"><MudIcon Icon="@Icons.Material.Filled.Groups" Size="Size.Small" Color="Color.Primary" /> Carga por técnico</h2>
+                @if (!_tablero.PorTecnico.Any())
+                {
+                    <EmptyState Icono="@Icons.Material.Filled.Inbox" Mensaje="No hay órdenes de cambio en el período." />
+                }
+                else
+                {
+                    @foreach (var t in _tablero.PorTecnico)
+                    {
+                        <MudPaper Class="@($"pa-3 mb-2 ta-clickable ta-hover-card {(_tecnicoSel == t.Tecnico ? "ta-tecnico-activo" : "")}")"
+                                  Elevation="0" Style="border:1px solid var(--bsc-borde);border-radius:10px"
+                                  @onclick="@(() => SeleccionarTecnico(t.Tecnico))">
+                            <div class="d-flex justify-space-between align-center flex-wrap gap-2">
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@(_tecnicoSel == t.Tecnico ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                             Size="Size.Small" Style="color:var(--texto-tenue)" />
+                                    <MudAvatar Color="Color.Primary" Size="Size.Small">@Iniciales(t.Tecnico)</MudAvatar>
+                                    <div>
+                                        <MudText Typo="Typo.subtitle2"><b>@t.Tecnico</b></MudText>
+                                        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">@t.Total OC · @t.Abiertas abiertas</MudText>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-1 flex-wrap">
+                                    @if (t.VencenEsteMes > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Style="background:var(--op-riesgo);color:#fff">@t.VencenEsteMes vencen en @NombreMes(_mes)</MudChip>
+                                    }
+                                    @if (t.Vencidas > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Style="background:var(--op-vencido);color:#fff">@t.Vencidas vencidas</MudChip>
+                                    }
+                                    @if (t.VencenPronto > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">@t.VencenPronto por vencer</MudChip>
+                                    }
+                                    @if (t.EnCurso > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">@t.EnCurso en curso</MudChip>
+                                    }
+                                    @if (t.Completadas > 0)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">@t.Completadas cerradas</MudChip>
+                                    }
+                                </div>
+                            </div>
+                        </MudPaper>
+
+                        @if (_tecnicoSel == t.Tecnico)
+                        {
+                            <PanelTecnico Tecnico="@t.Tecnico" EsOrdenCambio="true"
+                                          VistaInicial="mes" Mes="_mes" Anio="_anio"
+                                          OnCerrar="@(() => _tecnicoSel = null)" />
+                        }
+                    }
+                }
+            </div>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private int _tab;
+    private string? _tecnicoSel;
+
+    /// <summary>Abre (o cierra) el detalle del técnico bajo su tarjeta.</summary>
+    private void SeleccionarTecnico(string tecnico)
+        => _tecnicoSel = _tecnicoSel == tecnico ? null : tecnico;
+
+    private bool _cargando = true;
+    private string? _error;
+    private DateTime? _ultimaActualizacion;
+
+    private OrdenCambioFiltro _filtro = new() { AnioVencimiento = DateTime.Today.Year };
+    private int _mes = DateTime.Today.Month;
+    private int _anio = DateTime.Today.Year;
+    private string? _analista;
+    private bool _filtrarPorMes;
+
+    private OrdenCambioDashboardDto _dash = new();
+    private ControlVencimientosDto _venc = new();
+    private TableroOcDto _tablero = new();
+    private List<string> _analistas = new();
+
+    private string NombreMes(int m) => new System.Globalization.CultureInfo("es-DO").DateTimeFormat.GetMonthName(m);
+
+    private static string Iniciales(string nombre)
+    {
+        if (string.IsNullOrWhiteSpace(nombre)) return "?";
+        var p = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return p.Length >= 2 ? $"{p[0][0]}{p[1][0]}".ToUpper() : nombre[..Math.Min(2, nombre.Length)].ToUpper();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _analistas = await Api.GrupoAnalistasAsync();   // solo los 6 del grupo
+        await RecargarTodo();
+    }
+
+    private bool _debeRenderizar = true;
+    protected override bool ShouldRender()
+    {
+        if (_debeRenderizar) { _debeRenderizar = false; return true; }
+        return false;
+    }
+    private void Render() { _debeRenderizar = true; StateHasChanged(); }
+
+    private async Task<IEnumerable<string>> BuscarAnalista(string valor, CancellationToken ct)
+    {
+        await Task.CompletedTask;
+        if (string.IsNullOrWhiteSpace(valor)) return _analistas;
+        return _analistas.Where(a => a.Contains(valor, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task OnMesChanged(int m) { _mes = m; if (_filtrarPorMes) { AplicarMes(); await RecargarTodo(); } }
+    private async Task OnAnioChanged(int a) { _anio = a; _filtro.AnioVencimiento = a; if (_filtrarPorMes) AplicarMes(); await RecargarTodo(); }
+    private async Task OnAnalistaChanged(string? a) { _analista = a; _filtro.AsignatarioNombre = a; await RecargarTodo(); }
+
+    private void AplicarMes()
+    {
+        _filtro.MesVencimiento = _mes;
+        _filtro.AnioVencimiento = _anio;
+    }
+
+    private async Task ToggleVencenEsteMes()
+    {
+        _filtrarPorMes = !_filtrarPorMes;
+        if (_filtrarPorMes) AplicarMes();
+        else { _filtro.MesVencimiento = null; }
+        await RecargarTodo();
+    }
+
+    private async Task LimpiarFiltros()
+    {
+        _filtro = new OrdenCambioFiltro { AnioVencimiento = DateTime.Today.Year };
+        _analista = null; _filtrarPorMes = false; _mes = DateTime.Today.Month; _anio = DateTime.Today.Year;
+        await RecargarTodo();
+    }
+
+    private List<(string, Action)> FiltrosActivos
+    {
+        get
+        {
+            var l = new List<(string, Action)>();
+            if (_filtrarPorMes) l.Add(($"Vencen en {NombreMes(_mes)} {_anio}", () => { _filtrarPorMes = false; _filtro.MesVencimiento = null; _ = RecargarTodo(); }));
+            if (!string.IsNullOrEmpty(_analista)) l.Add(($"Analista: {_analista}", () => { _analista = null; _filtro.AsignatarioNombre = null; _ = RecargarTodo(); }));
+            if (_filtro.Vencidas == true) l.Add(("Vencidas", () => { _filtro.Vencidas = null; _ = RecargarTodo(); }));
+            if (_filtro.VencenEnDias.HasValue) l.Add(($"Vencen en {_filtro.VencenEnDias}d", () => { _filtro.VencenEnDias = null; _ = RecargarTodo(); }));
+            return l;
+        }
+    }
+
+    private async Task RecargarTodo()
+    {
+        _cargando = true; _error = null; Render();
+        try
+        {
+            var tDash = Api.OcDashboardAsync(_filtro);
+            var tVenc = Api.OcControlVencimientosAsync(_filtro);
+            var tTablero = Api.TableroOrdenesCambioAsync(FiltroTablero());
+            await Task.WhenAll(tDash, tVenc, tTablero);
+            _dash = tDash.Result;
+            _venc = tVenc.Result;
+            _tablero = tTablero.Result;
+            _ultimaActualizacion = DateTime.Now;
+        }
+        catch (Exception ex) { _error = $"No se pudieron cargar las órdenes: {ex.Message}"; }
+        finally { _cargando = false; Render(); }
+    }
+
+    // Construye el filtro para el tablero (fuente chg directa + SLA real).
+    // Usa el mes/año como ventana de apertura; el "vencen este mes" se calcula en backend.
+    private TicketFiltro FiltroTablero()
+    {
+        // FechaDesde marca el MES de referencia para "vencen este mes".
+        // El backend amplía la ventana 100 días hacia atrás para no perder OC.
+        return new TicketFiltro
+        {
+            FechaDesde = new DateTime(_anio, _mes, 1),
+            FechaHasta = null,
+            AsignatarioNombre = _filtro.AsignatarioNombre,
+            ComplejidadOC = _filtro.ComplejidadOC,
+            Page = 1,
+            PageSize = 2000
+        };
+    }
+
+    // ===== Opciones de gráficos (API estable de ApexCharts) =====
+    private ApexChartOptions<ConteoOc> OptBarras(string color) => new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+        Colors = new() { color },
+        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } },
+        DataLabels = new ApexCharts.DataLabels { Enabled = false },
+        Legend = new Legend { Position = LegendPosition.Top }
+    };
+    private ApexChartOptions<ConteoOc> OptDona => new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+        Colors = new() { "#15528E", "#76B82A", "#0F3D6B", "#5A9BD5", "#ED6C02", "#C62828" },
+        Legend = new Legend { Position = LegendPosition.Bottom, FontSize = "11px" }
+    };
+    private ApexChartOptions<AntiguedadOc> OptAntiguedad => new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+        Colors = new() { "#15528E" },
+        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = false, Distributed = true } },
+        DataLabels = new ApexCharts.DataLabels { Enabled = true },
+        Legend = new Legend { Show = false }
+    };
+    private ApexChartOptions<TendenciaMesOc> OptTendencia => new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+        Colors = new() { "#15528E", "#76B82A" },
+        Stroke = new Stroke { Curve = Curve.Smooth, Width = 3 },
+        DataLabels = new ApexCharts.DataLabels { Enabled = false },
+        Legend = new Legend { Position = LegendPosition.Top }
+    };
+    private ApexChartOptions<VencimientoSemanaOc> OptSemana => new()
+    {
+        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+        Colors = new() { "#ED6C02" },
+        DataLabels = new ApexCharts.DataLabels { Enabled = false }
+    };
+
+    // ===== Contenido: Dashboard =====
+    private RenderFragment DashboardContent => @<text>
+        <MudGrid Spacing="3" Class="mb-4">
+            <MudItem xs="6" md="2"><KpiCard Titulo="Total OC" Valor="@_dash.Total.ToString()" Icono="@Icons.Material.Filled.ChangeCircle" Acento="azul" Nota="@($"{_dash.Abiertas} abiertas · {_dash.Cerradas} cerradas")" /></MudItem>
+            <MudItem xs="6" md="2"><KpiCard Titulo="Vencidas" Valor="@_dash.Vencidas.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido" OnClick="FiltrarVencidas" /></MudItem>
+            <MudItem xs="6" md="2"><KpiCard Titulo="Vencen 7 días" Valor="@_dash.VencenProximos7.ToString()" Icono="@Icons.Material.Filled.Schedule" Acento="riesgo" OnClick="@(() => FiltrarVencenDias(7))" /></MudItem>
+            <MudItem xs="6" md="2"><KpiCard Titulo="Vencen este mes" Valor="@_dash.VencenEsteMes.ToString()" Icono="@Icons.Material.Filled.CalendarMonth" Acento="riesgo" /></MudItem>
+            <MudItem xs="6" md="2"><KpiCard Titulo="% Completadas" Valor="@($"{_dash.PctCompletadas:0.#}%")" Icono="@Icons.Material.Filled.CheckCircle" Acento="cumplido" /></MudItem>
+            <MudItem xs="6" md="2"><KpiCard Titulo="Sin analista" Valor="@_dash.SinAnalista.ToString()" Icono="@Icons.Material.Filled.PersonOff" Acento="neutro" OnClick="FiltrarSinAnalista" /></MudItem>
+        </MudGrid>
+
+        <MudGrid Spacing="3" Class="mb-3">
+            <MudItem xs="6" md="3"><KpiCard Titulo="Cerradas c/ OC pendiente" Valor="@_dash.ConTicketCerradoOcPendiente.ToString()" Icono="@Icons.Material.Filled.Warning" Acento="@(_dash.ConTicketCerradoOcPendiente > 0 ? "vencido" : "neutro")" Nota="tickets cerrados con la OC aún abierta" /></MudItem>
+            <MudItem xs="6" md="3"><KpiCard Titulo="Sin fecha venc." Valor="@_dash.SinFechaVencimiento.ToString()" Icono="@Icons.Material.Filled.EventBusy" Acento="neutro" /></MudItem>
+            <MudItem xs="6" md="3"><KpiCard Titulo="Prom. días abiertos" Valor="@($"{_dash.PromedioDiasAbiertos:0.#}")" Icono="@Icons.Material.Filled.HourglassEmpty" Acento="azul" /></MudItem>
+            <MudItem xs="6" md="3"><KpiCard Titulo="Prom. días restantes" Valor="@($"{_dash.PromedioDiasRestantes:0.#}")" Icono="@Icons.Material.Filled.Timelapse" Acento="azul" /></MudItem>
+        </MudGrid>
+
+        <MudGrid Spacing="3">
+            <MudItem xs="12" md="7">
+                <ChartPanel Titulo="Creadas contra cerradas por mes" Icono="@Icons.Material.Filled.ShowChart" Vacio="@(!_dash.CreadasVsCerradas.Any())">
+                    <ApexChart TItem="TendenciaMesOc" Options="@OptTendencia" Height="300">
+                        <ApexPointSeries TItem="TendenciaMesOc" Items="_dash.CreadasVsCerradas" Name="Creadas" XValue="@(x => x.Mes)" YValue="@(x => x.Creadas)" SeriesType="SeriesType.Line" />
+                        <ApexPointSeries TItem="TendenciaMesOc" Items="_dash.CreadasVsCerradas" Name="Cerradas" XValue="@(x => x.Mes)" YValue="@(x => x.Cerradas)" SeriesType="SeriesType.Line" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+            <MudItem xs="12" md="5">
+                <ChartPanel Titulo="Por estado" Icon="@Icons.Material.Filled.DonutLarge" Vacio="@(!_dash.PorEstado.Any())">
+                    <ApexChart TItem="ConteoOc" Options="@OptDona" Height="300">
+                        <ApexPointSeries TItem="ConteoOc" Items="_dash.PorEstado" Name="Estado" XValue="@(x => x.Etiqueta)" YAggregate="@(g => g.Sum(x => x.Cantidad))" SeriesType="SeriesType.Donut" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <ChartPanel Titulo="Órdenes por analista" Icono="@Icons.Material.Filled.Groups" Vacio="@(!_dash.PorAnalista.Any())">
+                    <ApexChart TItem="ConteoOc" Options="@OptBarras("#15528E")" Height="320">
+                        <ApexPointSeries TItem="ConteoOc" Items="_dash.PorAnalista" Name="OC" XValue="@(x => Acortar(x.Etiqueta))" YValue="@(x => x.Cantidad)" SeriesType="SeriesType.Bar" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <ChartPanel Titulo="Antigüedad de abiertas" Icono="@Icons.Material.Filled.HourglassFull" Vacio="@(!_dash.Antiguedad.Any(a => a.Cantidad > 0))">
+                    <ApexChart TItem="AntiguedadOc" Options="@OptAntiguedad" Height="320">
+                        <ApexPointSeries TItem="AntiguedadOc" Items="_dash.Antiguedad" Name="OC" XValue="@(x => x.Rango)" YValue="@(x => x.Cantidad)" SeriesType="SeriesType.Bar" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <ChartPanel Titulo="Vencidas por analista" Icono="@Icons.Material.Filled.PersonalVideo" Vacio="@(!_dash.VencidasPorAnalista.Any())">
+                    <ApexChart TItem="ConteoOc" Options="@OptBarras("#C62828")" Height="300">
+                        <ApexPointSeries TItem="ConteoOc" Items="_dash.VencidasPorAnalista" Name="Vencidas" XValue="@(x => Acortar(x.Etiqueta))" YValue="@(x => x.Cantidad)" SeriesType="SeriesType.Bar" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <ChartPanel Titulo="Vencen por semana" Icono="@Icons.Material.Filled.DateRange" Vacio="@(!_dash.VencenPorSemana.Any())">
+                    <ApexChart TItem="VencimientoSemanaOc" Options="@OptSemana" Height="300">
+                        <ApexPointSeries TItem="VencimientoSemanaOc" Items="_dash.VencenPorSemana" Name="OC" XValue="@(x => x.Semana)" YValue="@(x => x.Cantidad)" SeriesType="SeriesType.Bar" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+        </MudGrid>
+    </text>;
+
+    // ===== Contenido: Control de vencimientos =====
+    private RenderFragment VencimientosContent => @<text>
+        <div class="semaforo mb-4">
+            <div class="semaforo-item" style="background:var(--op-vencido)"><div class="semaforo-valor">@_venc.Vencidas</div><div class="semaforo-label">Vencidas</div></div>
+            <div class="semaforo-item" style="background:#E53935"><div class="semaforo-valor">@_venc.VencenHoy</div><div class="semaforo-label">Vencen hoy</div></div>
+            <div class="semaforo-item" style="background:var(--op-riesgo)"><div class="semaforo-valor">@_venc.Vencen7</div><div class="semaforo-label">Próx. 7 días</div></div>
+            <div class="semaforo-item" style="background:#F9A825"><div class="semaforo-valor">@_venc.Vencen15</div><div class="semaforo-label">Próx. 15 días</div></div>
+            <div class="semaforo-item" style="background:var(--op-curso)"><div class="semaforo-valor">@_venc.Vencen30</div><div class="semaforo-label">Próx. 30 días</div></div>
+            <div class="semaforo-item" style="background:#607D8B"><div class="semaforo-valor">@_venc.VencenProximoMes</div><div class="semaforo-label">Próximo mes</div></div>
+            <div class="semaforo-item" style="background:var(--texto-tenue)"><div class="semaforo-valor">@_venc.SinFecha</div><div class="semaforo-label">Sin fecha</div></div>
+        </div>
+
+        <MudGrid Spacing="3" Class="mb-4">
+            <MudItem xs="12" md="4">
+                <ChartPanel Titulo="Distribución por analista" Icono="@Icons.Material.Filled.Groups" Vacio="@(!_venc.PorAnalista.Any())">
+                    <ApexChart TItem="ConteoOc" Options="@OptBarras("#ED6C02")" Height="300">
+                        <ApexPointSeries TItem="ConteoOc" Items="_venc.PorAnalista" Name="OC" XValue="@(x => Acortar(x.Etiqueta))" YValue="@(x => x.Cantidad)" SeriesType="SeriesType.Bar" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <ChartPanel Titulo="Por categoría" Icono="@Icons.Material.Filled.Category" Vacio="@(!_venc.PorCategoria.Any())">
+                    <ApexChart TItem="ConteoOc" Options="@OptDona" Height="300">
+                        <ApexPointSeries TItem="ConteoOc" Items="_venc.PorCategoria" Name="Cat" XValue="@(x => x.Etiqueta)" YAggregate="@(g => g.Sum(x => x.Cantidad))" SeriesType="SeriesType.Donut" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <ChartPanel Titulo="Vencen por semana" Icono="@Icons.Material.Filled.DateRange" Vacio="@(!_venc.PorSemana.Any())">
+                    <ApexChart TItem="VencimientoSemanaOc" Options="@OptSemana" Height="300">
+                        <ApexPointSeries TItem="VencimientoSemanaOc" Items="_venc.PorSemana" Name="OC" XValue="@(x => x.Semana)" YValue="@(x => x.Cantidad)" SeriesType="SeriesType.Bar" />
+                    </ApexChart>
+                </ChartPanel>
+            </MudItem>
+        </MudGrid>
+
+        <div class="panel">
+            <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.LowPriority" Size="Size.Small" Color="Color.Warning" /> Vencen primero</h2>
+            @if (!_venc.VencenPrimero.Any())
+            {
+                <EmptyState Icono="@Icons.Material.Filled.CheckCircle" Mensaje="Nada próximo a vencer." ColorIcono="var(--op-cumplido)" />
+            }
+            else
+            {
+                <MudTable Items="_venc.VencenPrimero" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>OC</MudTh><MudTh>Resumen</MudTh><MudTh>Analista</MudTh>
+                        <MudTh>Vencimiento</MudTh><MudTh>Restan</MudTh><MudTh>Estado</MudTh><MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="OC"><b>@context.NoOC</b></MudTd>
+                        <MudTd DataLabel="Resumen" Style="max-width:240px">@context.ResumenOC</MudTd>
+                        <MudTd DataLabel="Analista">@(context.AsignatarioOC ?? "—")</MudTd>
+                        <MudTd DataLabel="Vencimiento">@context.FechaVencimientoOC?.ToString("dd/MM/yyyy")</MudTd>
+                        <MudTd DataLabel="Restan">
+                            <span style="@($"color:{(context.DiasRestantes < 3 ? "var(--op-vencido)" : "var(--op-riesgo)")};font-weight:600")">@context.DiasRestantes d</span>
+                        </MudTd>
+                        <MudTd DataLabel="Estado"><EstadoVencimientoChip Estado="@context.EstadoVencimiento" DiasRestantes="@context.DiasRestantes" /></MudTd>
+                        <MudTd><MudButton Size="Size.Small" Color="Color.Primary" OnClick="@(() => AbrirGestion(context.NoOC))">Gestión</MudButton></MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </div>
+    </text>;
+
+    // ===== Contenido: Listado (tabla avanzada) =====
+    private RenderFragment ListadoContent => @<text>
+        <div class="panel pa-0">
+            <div class="d-flex justify-space-between align-center pa-4 pb-2 flex-wrap gap-2">
+                <MudTextField @bind-Value="_filtro.Texto" Placeholder="Buscar OC, resumen…" Variant="Variant.Outlined"
+                              Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Style="max-width:340px" OnKeyUp="@(async e => { if (e.Key == "Enter") await RecargarListado(); })" />
+                <div class="d-flex gap-2">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="RecargarListado">Buscar</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.TableView" OnClick="ExportarOc">Exportar</MudButton>
+                </div>
+            </div>
+
+            <MudTable ServerData="CargarListado" @ref="_tabla" Dense="true" Hover="true" Elevation="0"
+                      Breakpoint="Breakpoint.Md" T="OrdenCambioConTicketsDto" RowClassFunc="@FilaClass">
+                <HeaderContent>
+                    <MudTh>OC</MudTh><MudTh>Resumen</MudTh><MudTh>Estado</MudTh><MudTh>Analista</MudTh>
+                    <MudTh>Vencimiento</MudTh><MudTh>Tiempo</MudTh><MudTh>Tickets</MudTh><MudTh>Últ. gestión</MudTh><MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="OC">
+                        <div class="d-flex align-center gap-1">
+                            <b>@context.NoOC</b>
+                            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" OnClick="@(() => Copiar(context.NoOC))" />
+                        </div>
+                    </MudTd>
+                    <MudTd DataLabel="Resumen" Style="max-width:220px"><MudTooltip Text="@context.ResumenOC">@Truncar(context.ResumenOC, 40)</MudTooltip></MudTd>
+                    <MudTd DataLabel="Estado"><MudChip T="string" Size="Size.Small" Variant="Variant.Text">@context.EstadoOC</MudChip></MudTd>
+                    <MudTd DataLabel="Analista">@(context.AsignatarioOC ?? "—")</MudTd>
+                    <MudTd DataLabel="Vencimiento"><EstadoVencimientoChip Estado="@context.EstadoVencimiento" DiasRestantes="@context.DiasRestantes" /></MudTd>
+                    <MudTd DataLabel="Tiempo" Style="min-width:90px">
+                        @if (context.PctTiempoConsumido.HasValue)
+                        {
+                            <div class="barra-tiempo"><span class="@TiempoClass(context.PctTiempoConsumido.Value)" style="@($"width:{Math.Min(context.PctTiempoConsumido.Value,100)}%")"></span></div>
+                        }
+                        else { <span style="color:var(--texto-tenue)">—</span> }
+                    </MudTd>
+                    <MudTd DataLabel="Tickets">
+                        @if (context.TieneTicketCerradoOcPendiente)
+                        {
+                            <MudTooltip Text="Tiene tickets cerrados con la OC pendiente"><MudBadge Color="Color.Warning" Dot="true" Overlap="true"><MudChip T="string" Size="Size.Small" Variant="Variant.Text">@context.CantidadTickets</MudChip></MudBadge></MudTooltip>
+                        }
+                        else { <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@context.CantidadTickets</MudChip> }
+                    </MudTd>
+                    <MudTd DataLabel="Últ. gestión">
+                        @if (context.DiasDesdeUltimaGestion.HasValue) { <span>hace @context.DiasDesdeUltimaGestion d</span> }
+                        else { <span style="color:var(--texto-tenue)">sin gestión</span> }
+                    </MudTd>
+                    <MudTd>
+                        <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
+                            <MudMenuItem Icon="@Icons.Material.Filled.Assignment" OnClick="@(() => AbrirGestion(context.NoOC))">Registrar gestión</MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.Visibility" OnClick="@(() => VerDetalle(context))">Ver detalle</MudMenuItem>
+                            <MudMenuItem Icon="@Icons.Material.Filled.ContentCopy" OnClick="@(() => Copiar(context.NoOC))">Copiar No. OC</MudMenuItem>
+                        </MudMenu>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent><EmptyState Icono="@Icons.Material.Filled.SearchOff" Mensaje="No hay órdenes para estos filtros." Detalle="Ajusta el período o quita algún criterio." /></NoRecordsContent>
+                <LoadingContent><MudText Class="pa-4">Cargando…</MudText></LoadingContent>
+                <PagerContent><MudTablePager PageSizeOptions="new[]{25,50,100}" /></PagerContent>
+            </MudTable>
+        </div>
+    </text>;
+
+    private MudTable<OrdenCambioConTicketsDto>? _tabla;
+
+    private async Task<TableData<OrdenCambioConTicketsDto>> CargarListado(TableState state, CancellationToken ct)
+    {
+        _filtro.Page = state.Page + 1;
+        _filtro.PageSize = state.PageSize;
+        try
+        {
+            var r = await Api.BuscarOcAvanzadoAsync(_filtro);
+            return new TableData<OrdenCambioConTicketsDto> { Items = r.Items, TotalItems = r.TotalCount };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar: {ex.Message}", Severity.Error);
+            return new TableData<OrdenCambioConTicketsDto> { Items = new List<OrdenCambioConTicketsDto>(), TotalItems = 0 };
+        }
+    }
+
+    private async Task RecargarListado() { if (_tabla is not null) await _tabla.ReloadServerData(); }
+
+    private string FilaClass(OrdenCambioConTicketsDto o, int _)
+        => o.EstadoVencimiento == "vencida" ? "fila-critica" : "";
+
+    private async Task FiltrarVencidas() { _filtro.Vencidas = true; _tab = 2; await RecargarTodo(); await RecargarListado(); }
+    private async Task FiltrarVencenDias(int d) { _filtro.VencenEnDias = d; _tab = 2; await RecargarTodo(); await RecargarListado(); }
+    private async Task FiltrarSinAnalista() { _filtro.SinAnalista = true; _tab = 2; await RecargarTodo(); await RecargarListado(); }
+
+    private async Task AbrirGestion(string refOC)
+    {
+        var p = new DialogParameters { ["RefNum"] = refOC, ["EsOrdenCambio"] = true };
+        var d = await DialogService.ShowAsync<ReporteGestionDialog>($"Gestión · {refOC}", p, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var res = await d.Result;
+        if (!res.Canceled) await RecargarTodo();
+    }
+
+    private async Task VerDetalle(OrdenCambioConTicketsDto oc)
+    {
+        var p = new DialogParameters { ["Orden"] = oc };
+        await DialogService.ShowAsync<OrdenCambioDetalleDialog>($"OC {oc.NoOC}", p, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+    }
+
+    private async Task Copiar(string texto)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", texto);
+        Snackbar.Add($"Copiado: {texto}", Severity.Info);
+    }
+
+    private async Task ExportarOc()
+    {
+        try
+        {
+            var f = new OrdenCambioFiltro
+            {
+                Texto = _filtro.Texto, AsignatarioNombre = _filtro.AsignatarioNombre,
+                MesVencimiento = _filtro.MesVencimiento, AnioVencimiento = _filtro.AnioVencimiento,
+                Vencidas = _filtro.Vencidas, VencenEnDias = _filtro.VencenEnDias, SinAnalista = _filtro.SinAnalista,
+                Page = 1, PageSize = 2000
+            };
+            var data = await Api.BuscarOcAvanzadoAsync(f);
+            await CsvExport.DescargarOrdenesCambioAsync(data.Items);
+            Snackbar.Add($"Exportadas {data.Items.Count} órdenes", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"No se pudo exportar: {ex.Message}", Severity.Error); }
+    }
+
+    private static string TiempoClass(double pct) => pct >= 100 ? "tiempo-vencido" : pct >= 80 ? "tiempo-riesgo" : "tiempo-ok";
+    private static string Acortar(string n) { var p = n.Split(' ', StringSplitOptions.RemoveEmptyEntries); return p.Length >= 2 ? $"{p[0]} {p[^1]}" : n; }
+    private static string Truncar(string? s, int n) => string.IsNullOrEmpty(s) ? "" : s.Length <= n ? s : s[..n] + "…";
+}

@@ -1,0 +1,35 @@
+@inject TicketAnalyticsApi Api
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_nombre" Label="Nombre *" Variant="Variant.Outlined" Class="mb-3" Required="true" />
+        <MudTextField @bind-Value="_contacto" Label="Contacto" Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="_email" Label="Email" Variant="Variant.Outlined" InputType="InputType.Email" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Guardar" Disabled="@(string.IsNullOrWhiteSpace(_nombre) || _guardando)">
+            @(_guardando ? "Guardando..." : "Crear")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    private string _nombre = "";
+    private string? _contacto;
+    private string? _email;
+    private bool _guardando;
+
+    private async Task Guardar()
+    {
+        _guardando = true;
+        try
+        {
+            var r = await Api.CrearProveedorAsync(_nombre, _contacto, _email);
+            MudDialog.Close(DialogResult.Ok(r));
+        }
+        catch { _guardando = false; }
+    }
+    private void Cancelar() => MudDialog.Cancel();
+}

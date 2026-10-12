@@ -1,0 +1,38 @@
+@* Chip visual del estado de vencimiento de una OC. *@
+<MudChip T="string" Size="@Size" Variant="Variant.Filled" Style="@($"background:{Fondo};color:#fff")">
+    <MudIcon Icon="@Icono" Size="Size.Small" Class="mr-1" /> @Texto
+</MudChip>
+
+@code {
+    [Parameter] public string Estado { get; set; } = "sin_fecha";
+    [Parameter] public int? DiasRestantes { get; set; }
+    [Parameter] public Size Size { get; set; } = Size.Small;
+
+    private string Texto => Estado switch
+    {
+        "vencida" => DiasRestantes.HasValue ? $"Vencida ({Math.Abs(DiasRestantes.Value)}d)" : "Vencida",
+        "vence_hoy" => "Vence hoy",
+        "vence_pronto" => DiasRestantes.HasValue ? $"Vence en {DiasRestantes}d" : "Vence pronto",
+        "en_curso" => DiasRestantes.HasValue ? $"{DiasRestantes}d restantes" : "En curso",
+        "completada" => "Completada",
+        _ => "Sin fecha"
+    };
+    private string Fondo => Estado switch
+    {
+        "vencida" => "var(--op-vencido)",
+        "vence_hoy" => "var(--op-vencido)",
+        "vence_pronto" => "var(--op-riesgo)",
+        "en_curso" => "var(--op-curso)",
+        "completada" => "var(--op-cumplido)",
+        _ => "var(--texto-tenue)"
+    };
+    private string Icono => Estado switch
+    {
+        "vencida" => Icons.Material.Filled.Error,
+        "vence_hoy" => Icons.Material.Filled.Today,
+        "vence_pronto" => Icons.Material.Filled.Schedule,
+        "en_curso" => Icons.Material.Filled.HourglassBottom,
+        "completada" => Icons.Material.Filled.CheckCircle,
+        _ => Icons.Material.Filled.HelpOutline
+    };
+}

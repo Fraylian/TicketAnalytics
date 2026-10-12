@@ -1,0 +1,191 @@
+@* Alta/edición de un caso dentro del reporte mensual del VP. *@
+@inject TicketAnalyticsApi Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (Caso is null)
+        {
+            <MudTextField @bind-Value="_refNum" Label="Número de caso (ticket u OC)" Required="true"
+                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.ConfirmationNumber"
+                          HelperText="Ej. 1477056 o el número de la orden de cambio" Immediate="true" />
+
+            <MudRadioGroup T="string" @bind-Value="_tipoOrigen" Class="mt-2">
+                <MudRadio T="string" Value="@("cr")" Color="Color.Primary" Size="Size.Small">Ticket</MudRadio>
+                <MudRadio T="string" Value="@("chg")" Color="Color.Primary" Size="Size.Small">Orden de cambio</MudRadio>
+            </MudRadioGroup>
+        }
+        else
+        {
+            <MudPaper Elevation="0" Class="pa-3 mb-2"
+                      Style="border:1px solid var(--bsc-borde);border-radius:var(--radius-md);background:var(--bsc-superficie-2)">
+                <div class="d-flex align-center gap-2">
+                    <MudIcon Icon="@Icons.Material.Filled.ConfirmationNumber" Color="Color.Primary" />
+                    <div>
+                        <MudText Typo="Typo.subtitle2"><b>@Caso.RefNum</b> · @Caso.TipoTexto</MudText>
+                        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
+                            @(Caso.Resumen ?? Caso.CategoriaOrigen ?? "Sin resumen")
+                        </MudText>
+                    </div>
+                </div>
+            </MudPaper>
+        }
+
+        <MudSelect T="string" @bind-Value="_periodo" Label="Período del reporte" Class="mt-3"
+                   Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var p in Periodos())
+            {
+                <MudSelectItem T="string" Value="@p">@TextoPeriodo(p)</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="int?" @bind-Value="_categoriaId" Label="Categoría del reporte" Class="mt-3"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+            @foreach (var c in Categorias ?? new())
+            {
+                <MudSelectItem T="int?" Value="@((int?)c.CategoriaId)">@c.Nombre</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudText Typo="Typo.caption" Class="mt-3" Style="color:var(--texto-secundario)">Estado ejecutivo</MudText>
+        <div class="d-flex gap-1 flex-wrap mt-1">
+            @foreach (var e in EstadosVP.Todos)
+            {
+                <MudChip T="string" Size="Size.Small"
+                         OnClick="@(() => _estado = e.Valor)"
+                         Style="@(_estado == e.Valor
+                                  ? $"background:{e.Color};color:#fff;cursor:pointer;font-weight:600"
+                                  : $"background:transparent;color:{e.Color};border:1px solid {e.Color};cursor:pointer")">
+                    @e.Nombre
+                </MudChip>
+            }
+        </div>
+
+        <MudTextField @bind-Value="_responsable" Label="Responsable" Class="mt-3"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+
+        <MudTextField @bind-Value="_nota" Label="Nota ejecutiva" Class="mt-3"
+                      Variant="Variant.Outlined" Lines="3" Margin="Margin.Dense"
+                      HelperText="Este texto es el que se lee en la reunión con el VP." Immediate="true" />
+
+        <!-- Previsualización -->
+        <MudText Typo="Typo.caption" Class="mt-4" Style="color:var(--texto-secundario)">
+            Así se verá en el reporte
+        </MudText>
+        <div class="ta-cat-bloque mt-1" style="@($"--cat-color:{ColorCategoria()}")">
+            <div class="ta-caso" style="border-top:none">
+                <div class="d-flex align-center gap-2 flex-wrap">
+                    <span class="ta-caso-ref">@(Caso?.RefNum ?? (string.IsNullOrWhiteSpace(_refNum) ? "—" : _refNum))</span>
+                    <MudChip T="string" Size="Size.Small" Style="@($"background:{EstadosVP.Color(_estado)};color:#fff")">
+                        @EstadosVP.Nombre(_estado)
+                    </MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@NombreCategoria()</MudChip>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_nota))
+                {
+                    <div class="ta-caso-nota"><b>Nota:</b> @_nota</div>
+                }
+                <MudText Typo="Typo.caption" Class="mt-1" Style="color:var(--texto-tenue)">
+                    @(string.IsNullOrWhiteSpace(_responsable) ? "Sin responsable" : _responsable)
+                </MudText>
+            </div>
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Guardar" Disabled="_guardando">
+            @if (_guardando)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Guardando…</span>
+            }
+            else { <span>Guardar</span> }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private MudDialogInstance Dialogo { get; set; } = default!;
+    [Parameter] public string Periodo { get; set; } = "";
+    [Parameter] public List<CategoriaVPDto>? Categorias { get; set; }
+    [Parameter] public CasoReporteVPDto? Caso { get; set; }
+
+    private string _refNum = "";
+    private string _tipoOrigen = "cr";
+    private string _periodo = "";
+    private int? _categoriaId;
+    private int _estado;
+    private string? _responsable;
+    private string? _nota;
+    private bool _guardando;
+
+    protected override void OnInitialized()
+    {
+        _periodo = string.IsNullOrWhiteSpace(Periodo) ? $"{DateTime.Today:yyyy-MM}" : Periodo;
+        if (Caso is not null)
+        {
+            _refNum = Caso.RefNum;
+            _tipoOrigen = Caso.TipoOrigen;
+            _categoriaId = Caso.CategoriaVPId;
+            _estado = Caso.Estado;
+            _responsable = Caso.Responsable;
+            _nota = Caso.NotaEjecutiva;
+        }
+    }
+
+    private async Task Guardar()
+    {
+        var refNum = Caso?.RefNum ?? _refNum;
+        if (string.IsNullOrWhiteSpace(refNum))
+        {
+            Snackbar.Add("Indica el número del caso", Severity.Warning);
+            return;
+        }
+
+        _guardando = true;
+        try
+        {
+            await Api.ReporteVPGuardarCasoAsync(new GuardarCasoVPRequest
+            {
+                RefNum = refNum.Trim(),
+                TipoOrigen = Caso?.TipoOrigen ?? _tipoOrigen,
+                Periodo = _periodo,
+                CategoriaId = _categoriaId,
+                Estado = _estado,
+                Responsable = _responsable,
+                NotaEjecutiva = _nota
+            });
+            Dialogo.Close(DialogResult.Ok(true));
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception) { Snackbar.Add("No pudimos guardar el caso.", Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private void Cancelar() => Dialogo.Cancel();
+
+    private List<string> Periodos()
+    {
+        // Mes actual, tres anteriores y el siguiente: cubre el uso real del reporte.
+        var baseMes = DateTime.TryParse($"{_periodo}-01", out var d) ? d : DateTime.Today;
+        return Enumerable.Range(-3, 5)
+            .Select(i => baseMes.AddMonths(i).ToString("yyyy-MM"))
+            .Distinct().OrderByDescending(x => x).ToList();
+    }
+
+    private string NombreCategoria()
+        => Categorias?.FirstOrDefault(c => c.CategoriaId == _categoriaId)?.Nombre ?? "Sin categoría";
+
+    private string ColorCategoria()
+        => Categorias?.FirstOrDefault(c => c.CategoriaId == _categoriaId)?.Color ?? "#15528E";
+
+    private static string TextoPeriodo(string p)
+    {
+        if (!DateTime.TryParse($"{p}-01", out var d)) return p;
+        var cul = new System.Globalization.CultureInfo("es-DO");
+        var m = cul.DateTimeFormat.GetMonthName(d.Month);
+        return $"{char.ToUpper(m[0])}{m[1..]} {d.Year}";
+    }
+}

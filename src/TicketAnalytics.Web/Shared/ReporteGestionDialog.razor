@@ -1,0 +1,688 @@
+@inject TicketAnalyticsApi Api
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<MudDialog>
+    <DialogContent>
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+
+            <!-- ===== PROVEEDOR ===== -->
+            <MudTabPanel Text="Proveedor" Icon="@Icons.Material.Filled.Business">
+                @if (ProveedorYaRegistrado is { } rp)
+                {
+                    @* Ya existe un reporte: se muestra la info y no se permite crear otro *@
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Icon="@Icons.Material.Filled.CheckCircle">
+                        <MudText Typo="Typo.subtitle2"><b>Este caso ya fue reportado al proveedor</b></MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1">
+                            <b>@rp.Proveedor</b>@(string.IsNullOrWhiteSpace(rp.NumeroCasoExterno) ? "" : $" · caso {rp.NumeroCasoExterno}")
+                        </MudText>
+                        @if (!string.IsNullOrWhiteSpace(rp.Titulo))
+                        {
+                            <MudText Typo="Typo.body2">@rp.Titulo</MudText>
+                        }
+                        <MudText Typo="Typo.body2" Class="mt-1">
+                            Reportado el @rp.FechaReporte.ToString("dd/MM/yyyy") ·
+                            estado <b>@rp.EstadoTexto</b> · severidad @rp.Urgencia
+                        </MudText>
+                        @if (!string.IsNullOrWhiteSpace(rp.ResultadoSolucion))
+                        {
+                            <MudText Typo="Typo.body2" Class="mt-1"><b>Solución:</b> @rp.ResultadoSolucion</MudText>
+                        }
+                    </MudAlert>
+                    <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
+                        Para dar seguimiento a este reporte usa la pantalla de Proveedores.
+                        Aquí puedes seguir registrando avances del caso.
+                    </MudText>
+                }
+                else
+                {
+                <MudText Typo="Typo.body2" Class="mb-1">¿Se reportó al proveedor?</MudText>
+                <div class="d-flex gap-2 mb-3 flex-wrap">
+                    @foreach (var op in ReportadoProveedorOpciones.Todos)
+                    {
+                        <MudChip T="string" Size="Size.Medium"
+                                 OnClick="@(() => OnReportadoProveedorChanged(op.Valor))"
+                                 Style="@(_reportadoProveedor == op.Valor
+                                          ? $"background:{ColorOpcionProveedor(op.Valor)};color:#fff;cursor:pointer;font-weight:600"
+                                          : $"background:transparent;color:{ColorOpcionProveedor(op.Valor)};border:1px solid {ColorOpcionProveedor(op.Valor)};cursor:pointer")">
+                            @op.Nombre
+                        </MudChip>
+                    }
+                </div>
+
+                @if (_reportadoProveedor == 2)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                        Queda marcado como pendiente de escalar. No se crea un reporte al proveedor todavía;
+                        aparecerá en la bandeja de casos por escalar.
+                    </MudAlert>
+                }
+                else if (_reportadoProveedor == 0)
+                {
+                    <MudAlert Severity="Severity.Normal" Dense="true" Class="mb-3">
+                        El caso se resolvió internamente y no requiere proveedor.
+                    </MudAlert>
+                }
+
+                @if (_reportadoProveedor == 1)
+                {
+                    <MudSelect T="int" Value="_proveedorId" ValueChanged="OnProveedorChanged" Label="Proveedor *" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                        @foreach (var p in Proveedores)
+                        {
+                            <MudSelectItem T="int" Value="@p.ProveedorId">@p.Nombre</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField @bind-Value="_casoExterno" Label="No. de caso del proveedor" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Class="mb-3"
+                                  HelperText="Ticket que abrió el proveedor, o el correo al que se envió" />
+
+                    <MudTextField @bind-Value="_titulo" Label="Título del caso *" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+
+                    <MudDatePicker @bind-Date="_fechaReporte" Label="Fecha del reporte" DateFormat="dd/MM/yyyy"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+
+                    <MudGrid Spacing="2" Class="mb-1">
+                        <MudItem xs="12" md="6">
+                            <MudSelect T="string" Value="_severidad" ValueChanged="OnSeveridadChanged" Label="Severidad" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                @foreach (var s in SlaProveedorCatalogo.Severidades)
+                                {
+                                    <MudSelectItem T="string" Value="@s">@s</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" md="6" Class="d-flex align-center">
+                            <MudAlert Severity="Severity.Info" Dense="true" Class="py-1" Style="width:100%">SLA ref.: <b>@SlaReferenciaTexto</b></MudAlert>
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudTextField @bind-Value="_descripcionProblema" Label="Descripción del problema" Variant="Variant.Outlined"
+                                  Lines="3" Margin="Margin.Dense" Class="mb-3" />
+
+                    <MudTextField @bind-Value="_respuesta" Label="Respuesta del proveedor" Variant="Variant.Outlined"
+                                  Lines="2" Margin="Margin.Dense" Class="mb-3" />
+
+                    <MudDatePicker @bind-Date="_fechaResp" Label="Fecha primera respuesta del proveedor" DateFormat="dd/MM/yyyy"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" Class="mb-3" HelperText="@HorasRespuestaTexto" />
+
+                    <MudSelect T="int" @bind-Value="_estadoProveedor" Label="Estado del reporte al proveedor"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
+                               HelperText="Ciclo de vida del reporte con el proveedor">
+                        @foreach (var e in EstadosReporteProveedor.Todos)
+                        {
+                            <MudSelectItem T="int" Value="@e.Valor">@e.Nombre</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudTextField @bind-Value="_donde" Label="Dónde se encuentra la solución" Variant="Variant.Outlined"
+                                  Margin="Margin.Dense" Class="mb-3" HelperText="Ruta, ambiente, repositorio o documento" />
+
+                    <div class="pa-2" style="background:rgba(21,82,142,.04);border-radius:8px">
+                        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Evaluación</MudText>
+                        <div class="d-flex flex-wrap gap-3 mt-1">
+                            <MudCheckBox T="bool" Value="@(_brindoAsistencia == true)" ValueChanged="@((bool v) => _brindoAsistencia = v)" Label="Brindó asistencia" Color="Color.Success" />
+                            <MudCheckBox T="bool" Value="@(_entregoCambio == true)" ValueChanged="@((bool v) => _entregoCambio = v)" Label="Entregó cambio" Color="Color.Success" />
+                            <MudCheckBox T="bool" Value="@(_cumplioSla == true)" ValueChanged="@((bool v) => _cumplioSla = v)" Label="¿Cumplió el SLA?" Color="Color.Primary" />
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        El caso se resolvió internamente. No se creará un reporte de proveedor. Registra el detalle en la pestaña Avance.
+                    </MudAlert>
+                }
+                }
+            </MudTabPanel>
+
+            <!-- ===== JIRA ===== -->
+            <MudTabPanel Text="JIRA" Icon="@Icons.Material.Filled.BugReport">
+                @if (JirasRegistrados.Any())
+                {
+                    @* Ya hay JIRA vinculado: se muestra y no se permite duplicar *@
+                    <MudAlert Severity="Severity.Success" Class="mb-3" Icon="@Icons.Material.Filled.CheckCircle">
+                        <MudText Typo="Typo.subtitle2"><b>Este caso ya tiene JIRA vinculado</b></MudText>
+                        @foreach (var j in JirasRegistrados)
+                        {
+                            <MudText Typo="Typo.body2" Class="mt-1">
+                                <b>@j.ClaveJira</b>@(string.IsNullOrWhiteSpace(j.Titulo) ? "" : $" · {j.Titulo}")
+                                — @j.EstadoTexto, vinculado el @j.VinculadoEn.ToString("dd/MM/yyyy")
+                            </MudText>
+                            @if (!string.IsNullOrWhiteSpace(j.Url))
+                            {
+                                <MudLink Href="@j.Url" Target="_blank" Typo="Typo.body2">Abrir en JIRA</MudLink>
+                            }
+                        }
+                    </MudAlert>
+
+                    <MudSwitch T="bool" @bind-Value="_agregarOtroJira" Color="Color.Primary"
+                               Label="Vincular otro JIRA a este caso" Class="mb-2" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="mb-1">¿Este caso tiene JIRA?</MudText>
+                    <div class="d-flex gap-2 mb-3">
+                        <MudChip T="string" Size="Size.Medium" OnClick="@(() => _tieneJira = true)"
+                                 Style="@(_tieneJira
+                                          ? "background:#2E7D32;color:#fff;cursor:pointer;font-weight:600"
+                                          : "background:transparent;color:#2E7D32;border:1px solid #2E7D32;cursor:pointer")">
+                            Sí
+                        </MudChip>
+                        <MudChip T="string" Size="Size.Medium" OnClick="@(() => _tieneJira = false)"
+                                 Style="@(!_tieneJira
+                                          ? "background:#667085;color:#fff;cursor:pointer;font-weight:600"
+                                          : "background:transparent;color:#667085;border:1px solid #667085;cursor:pointer")">
+                            No / todavía no
+                        </MudChip>
+                    </div>
+                    @if (!_tieneJira)
+                    {
+                        <MudAlert Severity="Severity.Normal" Dense="true">
+                            El caso queda sin JIRA. Puedes vincularlo más adelante desde esta misma pantalla.
+                        </MudAlert>
+                    }
+                }
+
+                @if (PuedeCapturarJira)
+                {
+                    <MudTextField @bind-Value="_claveJira" Label="No. de JIRA" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Class="mb-3" HelperText="Ej. BSC-1234" />
+                    <MudTextField @bind-Value="_tituloJira" Label="Título" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+                    <MudTextField @bind-Value="_urlJira" Label="Enlace" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" />
+                    <MudCheckBox T="bool" @bind-Value="_esParaPase" Label="Creado para pase a producción" Color="Color.Primary" />
+                }
+            </MudTabPanel>
+
+            <!-- ===== AVANCE ===== -->
+            <MudTabPanel Text="Avance" Icon="@Icons.Material.Filled.Timeline">
+                <MudSelect T="string" @bind-Value="_tipoAvance" Label="Tipo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                    @foreach (var t in TiposAvance)
+                    {
+                        <MudSelectItem T="string" Value="@t">@t</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTextField @bind-Value="_avance" Label="Qué se hizo con el caso" Variant="Variant.Outlined"
+                              Lines="4" Margin="Margin.Dense" Class="mb-3" />
+                <MudSelect T="int" @bind-Value="_nuevaEtapa" Label="Estatus actual" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                    @foreach (var e in EtapasSeguimiento.Todas)
+                    {
+                        <MudSelectItem T="int" Value="@e.Id">@e.Texto</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudTextField @bind-Value="_proximosPasos" Label="Próximos pasos" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudTabPanel>
+
+            <!-- ===== CLASIFICACIÓN (datos estructurados para medir) ===== -->
+            <MudTabPanel Text="Clasificación" Icon="@Icons.Material.Filled.Category">
+                <MudSelect T="int" Value="_sistema" ValueChanged="OnSistemaChanged" Label="Sistema donde se presentó"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                    @foreach (var s in _sistemas)
+                    {
+                        <MudSelectItem T="int" Value="@s.Valor">@s.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+
+                <MudSelect T="int" Value="_tipoSolucion" ValueChanged="OnTipoSolucionChanged" Label="Tipo de solución"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                    @foreach (var t in _tiposSolucion)
+                    {
+                        <MudSelectItem T="int" Value="@t.Valor">@t.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @* Caso especial: solo BSC en Línea + Actualización de datos *@
+                @if (AplicaTipoActualizacion)
+                {
+                    <MudSelect T="int" @bind-Value="_tipoActualizacion" Label="Tipo de actualización de datos *"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
+                               HelperText="Necesario para medir cuántos casos hay de cada tipo">
+                        @foreach (var t in _tiposActualizacion)
+                        {
+                            <MudSelectItem T="int" Value="@t.Valor">@t.Nombre</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
+
+                <MudTextField @bind-Value="_areaDestino" Label="Área destino" Variant="Variant.Outlined"
+                              Margin="Margin.Dense" Class="mb-3"
+                              HelperText="Área responsable o involucrada" />
+
+                <MudDivider Class="my-3" />
+
+                <MudTextField @bind-Value="_causaRaiz" Label="Causa raíz" Variant="Variant.Outlined"
+                              Lines="2" Margin="Margin.Dense" Class="mb-3"
+                              HelperText="Motivo identificado del incidente" />
+
+                <MudTextField @bind-Value="_ticketCausaRaiz" Label="Ticket de causa raíz" Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              HelperText="Ticket asociado a la corrección definitiva" />
+            </MudTabPanel>
+
+            <!-- ===== REPORTE VP ===== -->
+            <MudTabPanel Text="Reporte VP" Icon="@Icons.Material.Filled.Summarize">
+                @if (_yaEstabaEnVP)
+                {
+                    <MudAlert Severity="Severity.Info" Class="mb-3" Icon="@Icons.Material.Filled.Summarize">
+                        <MudText Typo="Typo.subtitle2"><b>Este caso ya está en el reporte del VP</b></MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1">
+                            Período @TextoPeriodo(_periodoVP) · estado <b>@EstadosVP.Nombre(_estadoVP)</b>.
+                            Puedes actualizar la información; no se creará un registro nuevo.
+                        </MudText>
+                    </MudAlert>
+                }
+
+                <MudSwitch T="bool" Value="_vaReporteVP" ValueChanged="OnVaVPChanged" Color="Color.Primary"
+                           Label="Incluir en el reporte mensual del VP" Class="mb-3" />
+
+                @if (_vaReporteVP)
+                {
+                    <MudSelect T="string" @bind-Value="_periodoVP" Label="Período" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Class="mb-3">
+                        @foreach (var per in PeriodosVP())
+                        {
+                            <MudSelectItem T="string" Value="@per">@TextoPeriodo(per)</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudSelect T="int?" @bind-Value="_categoriaVPId" Label="Categoría del reporte"
+                               Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Clearable="true">
+                        @foreach (var cat in _categoriasVP)
+                        {
+                            <MudSelectItem T="int?" Value="@((int?)cat.CategoriaId)">@cat.Nombre</MudSelectItem>
+                        }
+                    </MudSelect>
+
+                    <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Estado ejecutivo</MudText>
+                    <div class="d-flex gap-1 flex-wrap mt-1 mb-3">
+                        @foreach (var e in EstadosVP.Todos)
+                        {
+                            <MudChip T="string" Size="Size.Small" OnClick="@(() => _estadoVP = e.Valor)"
+                                     Style="@(_estadoVP == e.Valor
+                                              ? $"background:{e.Color};color:#fff;cursor:pointer;font-weight:600"
+                                              : $"background:transparent;color:{e.Color};border:1px solid {e.Color};cursor:pointer")">
+                                @e.Nombre
+                            </MudChip>
+                        }
+                    </div>
+
+                    <MudTextField @bind-Value="_notaVP" Label="Nota ejecutiva" Variant="Variant.Outlined"
+                                  Lines="3" Margin="Margin.Dense" Immediate="true"
+                                  HelperText="Este texto es el que se lee en la reunión con el VP" />
+
+                    @* Previsualización de cómo se verá en el reporte *@
+                    <MudText Typo="Typo.caption" Class="mt-3" Style="color:var(--texto-secundario)">
+                        Así se verá en el reporte
+                    </MudText>
+                    <div class="ta-cat-bloque mt-1">
+                        <div class="ta-caso" style="border-top:none">
+                            <div class="d-flex align-center gap-2 flex-wrap">
+                                <span class="ta-caso-ref">@RefNum</span>
+                                <MudChip T="string" Size="Size.Small"
+                                         Style="@($"background:{EstadosVP.Color(_estadoVP)};color:#fff")">
+                                    @EstadosVP.Nombre(_estadoVP)
+                                </MudChip>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text">@NombreCategoriaVP()</MudChip>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_notaVP))
+                            {
+                                <div class="ta-caso-nota"><b>Nota:</b> @_notaVP</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </MudTabPanel>
+        </MudTabs>
+
+        <MudDivider Class="my-3" />
+        <MudSelect T="string" @bind-Value="_autor" Label="Tu nombre *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                   AdornmentIcon="@Icons.Material.Filled.Person" Required="true">
+            @foreach (var g in Grupo)
+            {
+                <MudSelectItem T="string" Value="@g">@g</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Secondary" Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.Summarize" OnClick="GuardarYRegistrarVP"
+                   Disabled="@(string.IsNullOrWhiteSpace(_autor) || _guardando)">
+            Registrar al VP
+        </MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Guardar"
+                   Disabled="@(string.IsNullOrWhiteSpace(_autor) || _guardando)">
+            @(_guardando ? "Guardando…" : (YaTieneGestion ? "Agregar seguimiento" : "Guardar gestión"))
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string RefNum { get; set; } = default!;
+    [Parameter] public bool EsOrdenCambio { get; set; }
+    [Parameter] public string? OrdenCambioRef { get; set; }
+
+    [Parameter] public List<ProveedorCatalogoDto> Proveedores { get; set; } = new();
+    [Parameter] public List<string> Grupo { get; set; } = new();
+
+    // ===== Clasificación estructurada =====
+    private int _sistema;
+    private int _tipoSolucion;
+    private int _tipoActualizacion;
+    private string? _areaDestino;
+    private string? _causaRaiz;
+    private string? _ticketCausaRaiz;
+
+    private List<OpcionCatalogo> _sistemas = new();
+    private List<OpcionCatalogo> _tiposSolucion = new();
+    private List<OpcionCatalogo> _tiposActualizacion = new();
+
+    // ===== Reporte VP =====
+    private bool _vaReporteVP;
+    private string _periodoVP = $"{DateTime.Today:yyyy-MM}";
+    private int? _categoriaVPId;
+    private int _estadoVP;
+    private string? _notaVP;
+    private List<CategoriaVPDto> _categoriasVP = new();
+    private bool _yaEstabaEnVP;
+
+    // ===== Lo que ya está registrado (para no duplicar) =====
+    private SeguimientoDto? _seguimiento;
+    private bool _tieneJira;
+    private bool _agregarOtroJira;
+
+    /// <summary>Reporte a proveedor ya existente, si lo hay.</summary>
+    private ReporteProveedorResumenDto? ProveedorYaRegistrado => _seguimiento?.ReportesProveedor.FirstOrDefault();
+
+    /// <summary>JIRAs ya vinculados al caso.</summary>
+    private List<JiraResumenDto> JirasRegistrados => _seguimiento?.Jiras ?? new();
+
+    /// <summary>Solo se capturan datos de JIRA si el usuario dijo que tiene y no está bloqueado.</summary>
+    private bool PuedeCapturarJira => JirasRegistrados.Any() ? _agregarOtroJira : _tieneJira;
+
+    /// <summary>Regla del punto 7: el subtipo solo aplica en BSC en Línea + Actualización de datos.</summary>
+    private bool AplicaTipoActualizacion => _sistema == 3 && _tipoSolucion == 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Catálogos base del diálogo (proveedores y analistas del grupo)
+        if (!Proveedores.Any())
+        {
+            try { Proveedores = await Api.CatalogoProveedoresAsync(); } catch { }
+        }
+        if (!Grupo.Any())
+        {
+            try { Grupo = await Api.GrupoAnalistasAsync(); } catch { }
+        }
+
+        try
+        {
+            var cat = await Api.CatalogosGestionAsync();
+            _sistemas = cat.Sistemas;
+            _tiposSolucion = cat.TiposSolucion;
+            _tiposActualizacion = cat.TiposActualizacion;
+            _categoriasVP = await Api.ReporteVPCategoriasAsync();
+        }
+        catch
+        {
+            // Sin catálogos el formulario sigue usable; los selectores quedan vacíos.
+        }
+
+        // Si el caso ya tiene gestión, precargamos lo que ya está registrado.
+        try
+        {
+            var seg = await Api.ObtenerSeguimientoAsync(RefNum);
+            if (seg is not null)
+            {
+                _seguimiento = seg;
+                YaTieneGestion = true;
+                _yaEstabaEnVP = seg.VaReporteVP;
+                _reportadoProveedor = seg.ReportadoProveedor;
+                _sistema = seg.Sistema;
+                _tipoSolucion = seg.TipoSolucion;
+                _tipoActualizacion = seg.TipoActualizacionDatos;
+                _areaDestino = seg.AreaDestino;
+                _causaRaiz = seg.CausaRaiz;
+                _ticketCausaRaiz = seg.TicketCausaRaiz;
+                _vaReporteVP = seg.VaReporteVP;
+                _categoriaVPId = seg.CategoriaReporteVPId;
+                _estadoVP = seg.EstadoReporteVP;
+                _notaVP = seg.NotaReporteVP;
+                if (seg.PeriodoReporteVP is { } per) _periodoVP = $"{per.Year:0000}-{per.Month:00}";
+                _tieneJira = seg.Jiras.Any();
+            }
+        }
+        catch { /* si falla, se trata como gestión nueva */ }
+    }
+
+    /// <summary>True si el caso ya tenía gestión: cambia el texto del botón.</summary>
+    public bool YaTieneGestion { get; private set; }
+
+    private void OnSistemaChanged(int v)
+    {
+        _sistema = v;
+        if (!AplicaTipoActualizacion) _tipoActualizacion = 0;   // limpia el subtipo si ya no aplica
+        StateHasChanged();
+    }
+
+    private void OnTipoSolucionChanged(int v)
+    {
+        _tipoSolucion = v;
+        if (!AplicaTipoActualizacion) _tipoActualizacion = 0;
+        StateHasChanged();
+    }
+
+    private void OnVaVPChanged(bool v) { _vaReporteVP = v; StateHasChanged(); }
+
+    private string NombreCategoriaVP()
+        => _categoriasVP.FirstOrDefault(x => x.CategoriaId == _categoriaVPId)?.Nombre ?? "Sin categoría";
+
+    private List<string> PeriodosVP()
+    {
+        var b = DateTime.TryParse($"{_periodoVP}-01", out var d) ? d : DateTime.Today;
+        return Enumerable.Range(-3, 5).Select(i => b.AddMonths(i).ToString("yyyy-MM"))
+                         .Distinct().OrderByDescending(x => x).ToList();
+    }
+
+    private static string TextoPeriodo(string per)
+    {
+        if (!DateTime.TryParse($"{per}-01", out var d)) return per;
+        var cul = new System.Globalization.CultureInfo("es-DO");
+        var m = cul.DateTimeFormat.GetMonthName(d.Month);
+        return $"{char.ToUpper(m[0])}{m[1..]} {d.Year}";
+    }
+
+    public static readonly string[] TiposAvance =
+    {
+        "Avance", "Observación", "Decisión", "Bloqueo", "Reunión", "Validación", "Prueba", "Resultado"
+    };
+
+    /// <summary>0 = No, 1 = Sí, 2 = Pendiente (EstadoReporteProveedorTicket).</summary>
+    private int _reportadoProveedor = 2;
+    private int _proveedorId;
+    private string? _casoExterno;
+    private string? _titulo;
+    private DateTime? _fechaReporte = DateTime.Today;
+    private DateTime? _fechaResp;
+    private string _severidad = "Medio";
+    private string? _descripcionProblema;
+    private string? _respuesta;
+    // Ciclo de vida del reporte al proveedor (EstadoReporteProveedor)
+    private int _estadoProveedor = 1;
+    // Etapa del seguimiento interno (EtapaSeguimiento) — concepto DISTINTO
+    private int _nuevaEtapaSeguimiento;
+    private string? _donde;
+    private bool? _brindoAsistencia;
+    private bool? _entregoCambio;
+    private bool? _cumplioSla;
+
+    private string? _claveJira;
+    private string? _tituloJira;
+    private string? _urlJira;
+    private bool _esParaPase;
+
+    private string _tipoAvance = "Avance";
+    private string? _avance;
+    private int _nuevaEtapa = 1;
+    private string? _proximosPasos;
+
+    private string _autor = "";
+    private bool _guardando;
+
+    // Cargar catálogo y grupo si no vinieron por parámetro (por si se abre standalone)
+    private ProveedorCatalogoDto? ProvSel => Proveedores.FirstOrDefault(p => p.ProveedorId == _proveedorId);
+    private int? SlaReferencia => ProvSel?.SlaPara(_severidad);
+    private string SlaReferenciaTexto => SlaReferencia.HasValue
+        ? (SlaReferencia.Value % 24 == 0 && SlaReferencia.Value >= 24 ? $"{SlaReferencia.Value / 24} día(s)" : $"{SlaReferencia.Value} horas")
+        : "No definido";
+    private string HorasRespuestaTexto
+    {
+        get
+        {
+            if (!_fechaReporte.HasValue || !_fechaResp.HasValue) return "";
+            var h = (_fechaResp.Value - _fechaReporte.Value).TotalHours;
+            return $"Tardó ~{h:0} h en responder";
+        }
+    }
+
+    private void OnReportadoProveedorChanged(int v) { _reportadoProveedor = v; StateHasChanged(); }
+
+    private static string ColorOpcionProveedor(int v) => v switch
+    {
+        1 => "#2E7D32",   // Sí
+        0 => "#667085",   // No
+        _ => "#ED6C02"    // Pendiente
+    };
+    private void OnProveedorChanged(int id) { _proveedorId = id; StateHasChanged(); }
+    private void OnSeveridadChanged(string s) { _severidad = s; StateHasChanged(); }
+
+    private async Task Guardar()
+    {
+        // Se puede registrar una gestión PARCIAL: basta con llenar una sección.
+        // Estos avisos informan de datos incompletos, pero no bloquean el guardado.
+        if (ProveedorYaRegistrado is null && _reportadoProveedor == 1 && _proveedorId == 0)
+            Snackbar.Add("Marcaste que se reportó al proveedor, pero no seleccionaste cuál.", Severity.Info);
+        if (AplicaTipoActualizacion && _tipoActualizacion == 0)
+            Snackbar.Add("Falta el tipo de actualización de datos; podrás completarlo luego.", Severity.Info);
+
+        _guardando = true;
+        try
+        {
+            // Una sola llamada atómica: seguimiento + clasificación + proveedor + JIRA + avance + VP.
+            // Si algo falla, el backend revierte todo (nada queda a medias).
+            var req = new GestionCasoRequest
+            {
+                RefNum = RefNum,
+                TipoOrigen = EsOrdenCambio ? "chg" : "cr",
+                TipoCaso = EsOrdenCambio ? "Orden de Cambio" : null,
+                Usuario = _autor,
+                TecnicoResponsable = _autor,
+                NuevaEtapa = _nuevaEtapaSeguimiento > 0 ? _nuevaEtapaSeguimiento : _nuevaEtapa,
+                ProximosPasos = _proximosPasos,
+
+                // Clasificación estructurada
+                Sistema = _sistema > 0 ? _sistema : null,
+                TipoSolucion = _tipoSolucion > 0 ? _tipoSolucion : null,
+                TipoActualizacionDatos = AplicaTipoActualizacion ? _tipoActualizacion : 0,
+                AreaDestino = _areaDestino,
+                CausaRaiz = _causaRaiz,
+                TicketCausaRaiz = _ticketCausaRaiz,
+
+                // Avance (el historial se conserva: cada gestión agrega una entrada)
+                Comentarios = ConstruirResumen(),
+                Avance = new AvanceGestionDto { Tipo = IndiceTipoAvance(_tipoAvance), Detalle = ConstruirResumen() },
+
+                // Proveedor
+                ReportadoProveedor = ProveedorYaRegistrado is not null ? 1 : _reportadoProveedor,
+                FechaReporteProveedor = _fechaReporte,
+                TicketProveedor = _casoExterno,
+                // Si ya hay un reporte, no se manda otro: el backend además lo bloquea.
+                Proveedor = ProveedorYaRegistrado is null && _reportadoProveedor == 1 && _proveedorId > 0
+                    ? new ProveedorGestionDto
+                      {
+                          ProveedorId = _proveedorId,
+                          NumeroCasoExterno = _casoExterno,
+                          Titulo = _titulo,
+                          Descripcion = _descripcionProblema,
+                          ContextoEnviado = _descripcionProblema,
+                          RespuestasRecibidas = _respuesta,
+                          ResultadoSolucion = _donde,
+                          Urgencia = _severidad,
+                          Estado = _estadoProveedor,
+                          CumplioSla = _cumplioSla,
+                          FechaReporte = _fechaReporte ?? DateTime.Today,
+                          ResponsableInterno = _autor
+                      }
+                    : null,
+
+                // JIRA
+                Jira = PuedeCapturarJira && !string.IsNullOrWhiteSpace(_claveJira)
+                    ? new JiraGestionDto
+                      {
+                          ClaveJira = _claveJira!,
+                          Titulo = _esParaPase ? $"[Pase a producción] {_tituloJira}" : _tituloJira,
+                          Url = _urlJira
+                      }
+                    : null,
+
+                // Reporte VP
+                ReporteVP = new ReporteVPGestionDto
+                {
+                    Incluir = _vaReporteVP,
+                    Periodo = _periodoVP,
+                    CategoriaId = _categoriaVPId,
+                    Estado = _estadoVP,
+                    Nota = _notaVP
+                }
+            };
+
+            var res = await Api.RegistrarGestionAsync(RefNum, req);
+
+            var msg = YaTieneGestion ? "Seguimiento agregado al historial" : "Gestión registrada";
+            Snackbar.Add(msg, Severity.Success);
+            if (res?.Mensajes is { Count: > 0 })
+                foreach (var m in res.Mensajes) Snackbar.Add(m, Severity.Info);
+
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.MensajeUsuario, Severity.Error);
+            _guardando = false;
+        }
+        catch (Exception)
+        {
+            Snackbar.Add("No pudimos guardar la gestión. Intenta de nuevo.", Severity.Error);
+            _guardando = false;
+        }
+    }
+
+    /// <summary>Guarda la gestión y navega al Reporte VP con el caso ya incluido.</summary>
+    private async Task GuardarYRegistrarVP()
+    {
+        _vaReporteVP = true;                 // el caso va al reporte
+        if (_estadoVP == 0 && _tipoSolucion == 4) _estadoVP = 4;   // "Solucionado" => Completado
+        await Guardar();
+        Nav.NavigateTo($"/reporte-vp?periodo={_periodoVP}", forceLoad: false);
+    }
+
+    private static int IndiceTipoAvance(string tipo)
+        => Array.IndexOf(TiposAvance, tipo) is var i && i >= 0 ? i : 0;
+
+    private string ConstruirResumen()
+    {
+        var partes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(_avance)) partes.Add(_avance);
+        if ((_reportadoProveedor == 1) && ProvSel is not null)
+        {
+            partes.Add($"Reportado a {ProvSel.Nombre}" + (string.IsNullOrWhiteSpace(_casoExterno) ? "" : $" (caso {_casoExterno})") + ".");
+            if (!string.IsNullOrWhiteSpace(_respuesta)) partes.Add($"Respuesta: {_respuesta}");
+            if (!string.IsNullOrWhiteSpace(_donde)) partes.Add($"Solución en: {_donde}");
+        }
+        if (!string.IsNullOrWhiteSpace(_claveJira))
+            partes.Add($"JIRA {_claveJira}" + (_esParaPase ? " para pase a producción." : "."));
+        return string.Join(" ", partes);
+    }
+
+    private void Cancelar() => MudDialog.Cancel();
+}

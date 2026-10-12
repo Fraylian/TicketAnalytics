@@ -1,0 +1,54 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="@BancoTheme.Theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="2">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
+        <img src="img/logo-bsc.png" alt="Banco Santa Cruz" style="height:34px;width:34px;object-fit:contain;background:#fff;border-radius:6px;padding:2px;" class="ml-2" />
+        <MudText Typo="Typo.h6" Class="ml-2">TicketAnalytics</MudText>
+        <MudText Typo="Typo.caption" Class="ml-2 mud-text-disabled" Style="color:#B9CBDF !important;">Banco Santa Cruz · Sistemas</MudText>
+        <MudSpacer />
+        <MudTooltip Text="Los tickets se leen de CA Service Desk sin modificarlos"><MudChip T="string" Icon="@Icons.Material.Filled.Storage" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text" Style="color:#fff;">MDB · solo lectura</MudChip></MudTooltip>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="1" Variant="DrawerVariant.Responsive" ClipMode="DrawerClipMode.Always">
+        <MudDrawerHeader Class="pb-2">
+            <MudText Typo="Typo.subtitle1" Style="color:#fff;font-weight:600;">Panel de análisis</MudText>
+        </MudDrawerHeader>
+        <MudNavMenu>
+            <div class="nav-seccion">Operación</div>
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/tickets" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ConfirmationNumber">Tickets</MudNavLink>
+            <MudNavLink Href="/sla" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Timer">Monitor SLA</MudNavLink>
+
+            <div class="nav-seccion">Gestión</div>
+            <MudNavLink Href="/seguimiento" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">Seguimiento</MudNavLink>
+            <MudNavLink Href="/ordenes-cambio" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ChangeCircle">Órdenes de cambio</MudNavLink>
+            <MudNavLink Href="/analistas" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Analistas</MudNavLink>
+            <MudNavLink Href="/trabajo-diario" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EditCalendar">Diario TI</MudNavLink>
+            <MudNavLink Href="/proveedores" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Business">Proveedores</MudNavLink>
+
+            <div class="nav-seccion">Reportes</div>
+            <MudNavLink Href="/reporte-vp" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Summarize">Reporte mensual VP</MudNavLink>
+        </MudNavMenu>
+        <MudSpacer />
+        <div class="pa-4" style="position:absolute;bottom:0;">
+            <MudText Typo="Typo.caption" Style="color:#8FA9C4;">Histórico desde 01-ene-2026</MudText>
+        </div>
+    </MudDrawer>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="py-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+}

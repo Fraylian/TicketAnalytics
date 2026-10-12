@@ -1,0 +1,123 @@
+@* Bandeja del equipo: tickets abiertos por analista, con colores y alertas de vencimiento. *@
+@inject TicketAnalyticsApi Api
+
+@if (_cargando)
+{
+    <MudGrid Spacing="3">
+        @for (var i = 0; i < 4; i++) { <MudItem xs="6" md="3"><MudSkeleton Height="90px" /></MudItem> }
+        <MudItem xs="12"><MudSkeleton Height="300px" /></MudItem>
+    </MudGrid>
+}
+else
+{
+    <!-- Semáforo global -->
+    <MudGrid Spacing="3" Class="mb-3">
+        <MudItem xs="6" md="3"><KpiCard Titulo="Vencidos" Valor="@_b.Vencidos.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido" Nota="requieren atención ya" /></MudItem>
+        <MudItem xs="6" md="3"><KpiCard Titulo="Vencen hoy" Valor="@_b.VencenHoy.ToString()" Icono="@Icons.Material.Filled.Today" Acento="vencido" /></MudItem>
+        <MudItem xs="6" md="3"><KpiCard Titulo="Vencen pronto" Valor="@_b.VencenPronto.ToString()" Icono="@Icons.Material.Filled.HourglassBottom" Acento="riesgo" Nota="en 2 días o menos" /></MudItem>
+        <MudItem xs="6" md="3"><KpiCard Titulo="Abiertos" Valor="@_b.TotalAbiertos.ToString()" Icono="@Icons.Material.Filled.Inbox" Acento="azul" /></MudItem>
+    </MudGrid>
+
+    @if (!_b.Analistas.Any())
+    {
+        <EmptyState Icono="@Icons.Material.Filled.CheckCircle" Mensaje="No hay tickets abiertos por vencer en el grupo." />
+    }
+    else
+    {
+        @foreach (var a in _b.Analistas)
+        {
+            <MudPaper Class="pa-3 mb-3" Elevation="0" Style="@BordeAnalista(a)">
+                <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+                    <div class="d-flex align-center gap-2">
+                        <MudAvatar Color="Color.Primary" Size="Size.Small">@Iniciales(a.Analista)</MudAvatar>
+                        <div>
+                            <MudText Typo="Typo.subtitle1"><b>@a.Analista</b></MudText>
+                            <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">@a.TotalAbiertos abiertos</MudText>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-1 flex-wrap">
+                        @if (a.Vencidos > 0) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-vencido);color:#fff">@a.Vencidos vencidos</MudChip> }
+                        @if (a.VencenHoy > 0) { <MudChip T="string" Size="Size.Small" Style="background:#C62828;color:#fff">@a.VencenHoy hoy</MudChip> }
+                        @if (a.VencenPronto > 0) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-riesgo);color:#fff">@a.VencenPronto pronto</MudChip> }
+                        @if (a.EnCurso > 0) { <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">@a.EnCurso en curso</MudChip> }
+                    </div>
+                </div>
+
+                <MudExpansionPanels Elevation="0" Dense="true">
+                    <MudExpansionPanel Text="@($"Ver {a.Tickets.Count} tickets")">
+                        <MudTable Items="a.Tickets" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                            <HeaderContent>
+                                <MudTh>Ticket</MudTh><MudTh>Título</MudTh><MudTh>Apertura</MudTh><MudTh>Vence</MudTh><MudTh>Estado</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Ticket"><b>@context.NoTicket</b></MudTd>
+                                <MudTd DataLabel="Título" Style="max-width:280px"><MudText Typo="Typo.body2" Style="white-space:normal">@Corto(context.Titulo)</MudText></MudTd>
+                                <MudTd DataLabel="Apertura">@(context.FechaApertura?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
+                                <MudTd DataLabel="Vence">@(context.FechaVencimiento?.ToString("dd/MM/yyyy HH:mm") ?? "sin fecha")</MudTd>
+                                <MudTd DataLabel="Estado">
+                                    <MudChip T="string" Size="Size.Small" Style="@ChipVenc(context.EstadoVencimiento)">@TextoVenc(context)</MudChip>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            </MudPaper>
+        }
+    }
+}
+
+@code {
+    [Parameter] public string? Analista { get; set; }   // filtra a un analista puntual (opcional)
+    [Parameter] public int? Mes { get; set; }
+    [Parameter] public int? Anio { get; set; }
+
+    private BandejaAnalistasDto _b = new();
+    private bool _cargando = true;
+
+    protected override async Task OnParametersSetAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        try
+        {
+            var f = new TicketFiltro
+            {
+                FechaDesde = (Mes.HasValue && Anio.HasValue) ? new DateTime(Anio.Value, 1, 1) : new DateTime(DateTime.Today.Year, 1, 1),
+                AsignatarioNombre = Analista
+            };
+            _b = await Api.BandejaAnalistasAsync(f);
+        }
+        finally { _cargando = false; }
+    }
+
+    private static string Iniciales(string n)
+    {
+        if (string.IsNullOrWhiteSpace(n)) return "?";
+        var p = n.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return p.Length >= 2 ? $"{p[0][0]}{p[1][0]}".ToUpper() : n[..Math.Min(2, n.Length)].ToUpper();
+    }
+    private static string Corto(string? t) => string.IsNullOrEmpty(t) ? "—" : (t.Length > 90 ? t[..90] + "…" : t);
+    private static string BordeAnalista(AnalistaBandejaDto a)
+    {
+        var color = a.Vencidos > 0 || a.VencenHoy > 0 ? "var(--op-vencido)"
+                  : a.VencenPronto > 0 ? "var(--op-riesgo)" : "var(--bsc-borde)";
+        return $"border:1px solid var(--bsc-borde);border-left:4px solid {color};border-radius:10px";
+    }
+    private static string ChipVenc(string estado) => estado switch
+    {
+        "vencido" => "background:var(--op-vencido);color:#fff",
+        "vence_hoy" => "background:#C62828;color:#fff",
+        "vence_pronto" => "background:var(--op-riesgo);color:#fff",
+        "en_curso" => "background:var(--op-curso);color:#fff",
+        _ => "background:var(--texto-tenue);color:#fff"
+    };
+    private static string TextoVenc(TicketBandejaDto t) => t.EstadoVencimiento switch
+    {
+        "vencido" => t.DiasParaVencer.HasValue ? $"Vencido ({Math.Abs(t.DiasParaVencer.Value)}d)" : "Vencido",
+        "vence_hoy" => "Vence hoy",
+        "vence_pronto" => t.DiasParaVencer.HasValue ? $"En {t.DiasParaVencer}d" : "Pronto",
+        "en_curso" => t.DiasParaVencer.HasValue ? $"En {t.DiasParaVencer}d" : "En curso",
+        _ => "Sin fecha"
+    };
+}

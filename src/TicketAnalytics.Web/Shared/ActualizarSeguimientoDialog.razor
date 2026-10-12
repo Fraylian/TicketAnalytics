@@ -1,0 +1,54 @@
+@inject TicketAnalyticsApi Api
+
+<MudDialog>
+    <DialogContent>
+        <MudSelect T="string" @bind-Value="_req.TipoActualizacion" Label="Tipo" Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var t in _tipos)
+            {
+                <MudSelectItem T="string" Value="@t">@t</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="_req.Contenido" Label="Detalle *" Variant="Variant.Outlined" Lines="3" Class="mb-3" Required="true" />
+        <MudSelect T="int?" @bind-Value="_nuevaEtapa" Label="Cambiar a etapa (opcional)" Clearable="true" Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var e in EtapasSeguimiento.Todas)
+            {
+                <MudSelectItem T="int?" Value="@e.Id">@e.Texto</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField @bind-Value="_req.ProximosPasos" Label="Próximos pasos" Variant="Variant.Outlined" Class="mb-3" />
+        <MudDatePicker @bind-Date="_proximoSeg" Label="Próximo seguimiento" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="_req.Autor" Label="Tu nombre *" Variant="Variant.Outlined" Required="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Guardar"
+                   Disabled="@(string.IsNullOrWhiteSpace(_req.Contenido) || string.IsNullOrWhiteSpace(_req.Autor) || _guardando)">
+            @(_guardando ? "Guardando..." : "Registrar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string RefNum { get; set; } = default!;
+
+    private AgregarActualizacionRequest _req = new();
+    private int? _nuevaEtapa;
+    private DateTime? _proximoSeg;
+    private bool _guardando;
+    private readonly string[] _tipos = { "Avance", "Observación", "Decisión", "Bloqueo", "Reunión", "Validación", "Prueba", "Resultado" };
+
+    private async Task Guardar()
+    {
+        _guardando = true;
+        try
+        {
+            _req.NuevaEtapa = _nuevaEtapa;
+            _req.ProximoSeguimiento = _proximoSeg;
+            var r = await Api.AgregarActualizacionAsync(RefNum, _req);
+            MudDialog.Close(DialogResult.Ok(r));
+        }
+        catch { _guardando = false; }
+    }
+    private void Cancelar() => MudDialog.Cancel();
+}

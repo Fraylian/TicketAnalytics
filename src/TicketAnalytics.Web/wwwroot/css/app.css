@@ -1,0 +1,430 @@
+/* ===================================================================
+   TicketAnalytics · Banco Santa Cruz
+   Sistema de diseño para operaciones de TI
+   =================================================================== */
+:root {
+    /* ===== Identidad Banco Santa Cruz ===== */
+    --bsc-azul: #15528E;
+    --bsc-azul-profundo: #0F3D6B;
+    --bsc-azul-suave: #EAF2F9;
+    --bsc-verde: #76B82A;
+    --bsc-verde-suave: #EFF7E4;
+
+    /* ===== Superficies y jerarquía ===== */
+    --bsc-fondo: #F4F7FB;
+    --bsc-superficie: #FFFFFF;
+    --bsc-superficie-2: #FAFBFD;   /* zonas secundarias dentro de un panel */
+    --bsc-superficie-3: #F1F5F9;   /* encabezados de tabla, franjas */
+    --bsc-borde: #E4E9F0;
+    --bsc-borde-fuerte: #D2DBE6;
+
+    /* ===== Colores semánticos ===== */
+    --color-exito: #2E7D32;
+    --color-exito-suave: #E8F5E9;
+    --color-alerta: #ED6C02;
+    --color-alerta-suave: #FFF4E5;
+    --color-error: #C62828;
+    --color-error-suave: #FDECEA;
+    --color-info: #1976D2;
+    --color-info-suave: #E7F1FB;
+
+    /* Semáforo operativo (alias semánticos: una sola fuente de verdad) */
+    --op-vencido: var(--color-error);
+    --op-riesgo: var(--color-alerta);
+    --op-curso: var(--bsc-azul);
+    --op-cumplido: var(--color-exito);
+
+    /* ===== Texto ===== */
+    --texto-primario: #1A2733;
+    --texto-secundario: #5A6B7B;
+    --texto-tenue: #8FA3B8;
+
+    /* ===== Paleta de datos (gráficos): institucional ampliada ===== */
+    --dato-1: #15528E;
+    --dato-2: #00897B;
+    --dato-3: #6B4EFF;
+    --dato-4: #C75100;
+    --dato-5: #7B1FA2;
+    --dato-6: #455A64;
+    --dato-7: #AD1457;
+    --dato-8: #2E7D32;
+
+    /* ===== Radios ===== */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-pill: 999px;
+
+    /* ===== Elevación (sutil, nada de sombras gigantes) ===== */
+    --shadow-sm: 0 1px 2px rgba(15, 61, 107, .06);
+    --shadow-md: 0 6px 18px rgba(15, 61, 107, .07);
+    --shadow-lg: 0 14px 32px rgba(15, 61, 107, .10);
+
+    /* ===== Spacing (escala consistente) ===== */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 24px;
+    --sp-6: 32px;
+    --sp-7: 48px;
+
+    /* ===== Transiciones ===== */
+    --transition-fast: 150ms cubic-bezier(.4, 0, .2, 1);
+    --transition-normal: 240ms cubic-bezier(.4, 0, .2, 1);
+    --transition-slow: 400ms cubic-bezier(.4, 0, .2, 1);
+}
+
+/* ===== Microinteracciones y entrada de secciones ===== */
+@keyframes ta-fade-up {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+
+.ta-enter { animation: ta-fade-up var(--transition-normal) both; }
+.ta-enter-1 { animation: ta-fade-up var(--transition-normal) both; animation-delay: 40ms; }
+.ta-enter-2 { animation: ta-fade-up var(--transition-normal) both; animation-delay: 80ms; }
+.ta-enter-3 { animation: ta-fade-up var(--transition-normal) both; animation-delay: 120ms; }
+
+/* Tarjeta interactiva: elevación mínima, nada exagerado */
+.ta-hover-card {
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+.ta-hover-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--bsc-borde-fuerte);
+}
+.ta-clickable { cursor: pointer; }
+
+/* Indicador de refresco: mantiene el contenido visible mientras actualiza */
+.ta-actualizando { position: relative; }
+.ta-actualizando::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: rgba(255, 255, 255, .45);
+    border-radius: inherit;
+    pointer-events: none;
+    transition: opacity var(--transition-fast);
+}
+
+/* Encabezado de sección */
+.ta-section-header {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: var(--sp-3); margin-bottom: var(--sp-3);
+}
+.ta-section-header h2 { font-size: 1.05rem; font-weight: 600; color: var(--texto-primario); }
+.ta-section-header p  { font-size: .85rem; color: var(--texto-secundario); }
+
+/* Chips de filtros activos */
+.ta-filtros-activos { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+
+/* Tablas: cabecera fija y densidad media */
+.ta-tabla-sticky thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--bsc-superficie-3);
+    color: var(--texto-secundario);
+    font-weight: 600;
+    border-bottom: 1px solid var(--bsc-borde);
+}
+.ta-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Accesibilidad: foco visible y respeto por reduced motion */
+:focus-visible {
+    outline: 2px solid var(--bsc-azul);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+    }
+}
+
+html, body {
+    margin: 0;
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bsc-fondo);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Pantalla de carga ===== */
+.loading-host {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: linear-gradient(160deg, var(--bsc-azul) 0%, var(--bsc-azul-profundo) 100%);
+    color: #fff;
+}
+.loading-mark {
+    width: 76px; height: 76px; border-radius: 18px; background: var(--bsc-verde);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 700; letter-spacing: 1px; margin-bottom: 18px;
+    box-shadow: 0 12px 32px rgba(118,184,42,.35);
+}
+.loading-text { font-size: 14px; opacity: .8; letter-spacing: .3px; }
+
+#blazor-error-ui {
+    background: var(--op-vencido); color: #fff; bottom: 0;
+    box-shadow: 0 -2px 12px rgba(0,0,0,.25);
+    display: none; left: 0; padding: 0.8rem 1.25rem; position: fixed; width: 100%; z-index: 1000;
+}
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: 1rem; top: 0.75rem; }
+#blazor-error-ui .reload { color: #fff; text-decoration: underline; }
+
+/* ===== Encabezado de sección ===== */
+.seccion-titulo {
+    font-size: 1.6rem; font-weight: 600; color: var(--texto-primario);
+    letter-spacing: -0.02em; margin: 0;
+}
+.seccion-bajada {
+    font-size: .875rem; color: var(--texto-secundario); margin-top: 2px;
+}
+
+/* ===== SIGNATURE: barra de riesgo SLA ===== */
+.barra-riesgo {
+    display: flex; height: 44px; border-radius: 10px; overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,.08); background: #EDF1F5;
+}
+.barra-riesgo > div {
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 600; font-size: .8rem;
+    transition: flex-grow .5s cubic-bezier(.4,0,.2,1);
+    position: relative; min-width: 0;
+}
+.barra-riesgo > div span { padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.riesgo-vencido  { background: var(--op-vencido); }
+.riesgo-riesgo   { background: var(--op-riesgo); }
+.riesgo-curso    { background: var(--op-curso); }
+.riesgo-cumplido { background: var(--op-cumplido); }
+
+.leyenda-riesgo { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; }
+.leyenda-item { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--texto-secundario); }
+.leyenda-punto { width: 10px; height: 10px; border-radius: 3px; }
+
+/* ===== Tarjetas KPI con sparkline ===== */
+.kpi {
+    background: var(--bsc-superficie); border-radius: 12px; padding: 18px 20px;
+    border: 1px solid var(--bsc-borde); height: 100%;
+    display: flex; flex-direction: column; justify-content: space-between;
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+.kpi:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(21,82,142,.10); }
+.kpi-etiqueta {
+    font-size: .7rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--texto-tenue);
+}
+.kpi-valor { font-size: 2.1rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; margin: 6px 0 2px; }
+.kpi-nota { font-size: .75rem; color: var(--texto-secundario); }
+.kpi-spark { height: 38px; margin-top: 8px; margin-left: -6px; margin-right: -6px; }
+.kpi--acento-vencido  { border-left: 3px solid var(--op-vencido); }
+.kpi--acento-riesgo   { border-left: 3px solid var(--op-riesgo); }
+.kpi--acento-cumplido { border-left: 3px solid var(--op-cumplido); }
+.kpi--acento-azul     { border-left: 3px solid var(--bsc-azul); }
+
+/* ===== Panel ===== */
+.panel {
+    background: var(--bsc-superficie); border-radius: 12px;
+    border: 1px solid var(--bsc-borde); padding: 20px; height: 100%;
+}
+.panel-titulo {
+    font-size: .95rem; font-weight: 600; color: var(--texto-primario);
+    margin: 0 0 14px; display: flex; align-items: center; gap: 8px;
+}
+
+/* ===== Tabla ===== */
+.fila-critica { background: rgba(237,108,2,.07) !important; }
+.fila-critica:hover { background: rgba(237,108,2,.12) !important; }
+
+/* ===== Tarjeta de OC ===== */
+.oc-card { border-left: 4px solid var(--bsc-azul); }
+.oc-card.pendiente { border-left-color: var(--op-riesgo); }
+
+/* ===== Estado vacío ===== */
+.vacio {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 56px 24px; text-align: center; color: var(--texto-secundario);
+}
+.vacio-icono { opacity: .35; margin-bottom: 12px; }
+
+@media (max-width: 600px) {
+    .kpi-valor { font-size: 1.7rem; }
+    .barra-riesgo { height: 38px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ===== Ampliación Fase 3: KPI clickable, vencimientos, filtros activos ===== */
+.kpi--clickable { cursor: pointer; }
+.kpi--clickable:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(21,82,142,.14); }
+
+/* Barra de progreso de tiempo consumido (apertura -> vencimiento) */
+.barra-tiempo {
+    height: 6px; border-radius: 3px; background: #EDF1F5; overflow: hidden; margin-top: 6px;
+}
+.barra-tiempo > span { display: block; height: 100%; border-radius: 3px; transition: width .4s ease; }
+.tiempo-ok      { background: var(--op-cumplido); }
+.tiempo-riesgo  { background: var(--op-riesgo); }
+.tiempo-vencido { background: var(--op-vencido); }
+
+/* Chips de filtros activos */
+.filtros-activos { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+
+/* Tarjeta de OC compacta */
+.oc-tarjeta {
+    background: var(--bsc-superficie); border: 1px solid var(--bsc-borde); border-radius: 12px;
+    padding: 16px; border-left: 4px solid var(--bsc-azul); transition: box-shadow .18s ease, transform .18s ease;
+}
+.oc-tarjeta:hover { box-shadow: 0 8px 24px rgba(21,82,142,.10); transform: translateY(-2px); }
+.oc-tarjeta.venc-vencida  { border-left-color: var(--op-vencido); }
+.oc-tarjeta.venc-hoy      { border-left-color: var(--op-vencido); }
+.oc-tarjeta.venc-pronto   { border-left-color: var(--op-riesgo); }
+.oc-tarjeta.venc-curso    { border-left-color: var(--op-curso); }
+.oc-tarjeta.venc-completada { border-left-color: var(--op-cumplido); }
+.oc-tarjeta.venc-sin_fecha  { border-left-color: var(--texto-tenue); }
+
+/* Semáforo de vencimientos */
+.semaforo { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+.semaforo-item { border-radius: 10px; padding: 14px; text-align: center; color: #fff; }
+.semaforo-valor { font-size: 1.8rem; font-weight: 700; line-height: 1; }
+.semaforo-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; opacity: .9; margin-top: 4px; }
+
+/* Sección con encabezado */
+.dash-section-header {
+    display: flex; align-items: center; gap: 10px; margin: 8px 0 16px;
+    padding-bottom: 8px; border-bottom: 2px solid var(--bsc-borde);
+}
+.dash-section-header .icono {
+    width: 34px; height: 34px; border-radius: 9px; background: rgba(21,82,142,.08);
+    display: flex; align-items: center; justify-content: center;
+}
+
+/* ===== Responsive ampliado (Fase 5) ===== */
+@media (max-width: 960px) {
+    .seccion-titulo { font-size: 1.35rem; }
+    .semaforo { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+    .panel { padding: 16px; }
+}
+
+@media (max-width: 600px) {
+    .kpi { padding: 14px 16px; }
+    .kpi-valor { font-size: 1.5rem; }
+    .kpi-etiqueta { font-size: .62rem; }
+    .semaforo { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .semaforo-valor { font-size: 1.4rem; }
+    .barra-riesgo { height: 34px; }
+    .barra-riesgo > div span { font-size: .68rem; }
+    .filtros-activos { gap: 4px; }
+    .dash-section-header { flex-wrap: wrap; }
+    /* Las tablas de MudBlazor ya cambian a modo tarjeta con Breakpoint */
+}
+
+@media (max-width: 400px) {
+    .semaforo { grid-template-columns: 1fr 1fr; }
+    .kpi-valor { font-size: 1.3rem; }
+}
+
+/* Scroll horizontal suave para tablas anchas en móvil */
+.panel .mud-table-container { -webkit-overflow-scrolling: touch; }
+
+/* Sparkline del KpiCard */
+.kpi-spark { width: 74px; height: 26px; flex: 0 0 auto; }
+
+/* Chips de filtros activos */
+.ta-chip-filtro {
+    display: inline-flex; align-items: center; gap: var(--sp-1);
+    padding: 4px 10px;
+    background: var(--bsc-azul-suave);
+    color: var(--bsc-azul-profundo);
+    border: 1px solid var(--bsc-borde);
+    border-radius: var(--radius-pill);
+    font-size: .8rem; font-weight: 600;
+}
+.ta-chip-filtro button {
+    display: inline-flex; align-items: center;
+    background: none; border: none; cursor: pointer;
+    color: inherit; padding: 0; line-height: 1;
+}
+
+/* Bloque ejecutivo de categoría (Reporte VP) */
+.ta-cat-bloque {
+    border: 1px solid var(--bsc-borde);
+    border-left: 4px solid var(--cat-color, var(--bsc-azul));
+    border-radius: var(--radius-md);
+    background: var(--bsc-superficie);
+    margin-bottom: var(--sp-3);
+    overflow: hidden;
+    transition: box-shadow var(--transition-fast);
+}
+.ta-cat-bloque:hover { box-shadow: var(--shadow-md); }
+
+.ta-cat-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--sp-3); padding: var(--sp-3) var(--sp-4);
+    cursor: pointer;
+}
+.ta-cat-head:hover { background: var(--bsc-superficie-2); }
+.ta-cat-nombre { font-weight: 600; color: var(--texto-primario); }
+.ta-cat-total  { font-size: .82rem; color: var(--texto-secundario); }
+
+/* Barra apilada de estados dentro de la categoría */
+.ta-barra-estados { display: flex; height: 8px; border-radius: var(--radius-pill); overflow: hidden; min-width: 120px; }
+.ta-barra-estados span { display: block; height: 100%; transition: width var(--transition-slow); }
+
+/* Tarjeta de caso ejecutivo */
+.ta-caso {
+    border-top: 1px solid var(--bsc-borde);
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--bsc-superficie-2);
+}
+.ta-caso:hover { background: var(--bsc-azul-suave); }
+.ta-caso-ref { font-weight: 700; color: var(--bsc-azul-profundo); }
+.ta-caso-nota {
+    margin-top: var(--sp-1); font-size: .85rem; color: var(--texto-secundario);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* Resumen narrativo ejecutivo */
+.ta-narrativa {
+    padding: var(--sp-4);
+    background: linear-gradient(135deg, var(--bsc-azul-suave), var(--bsc-superficie));
+    border: 1px solid var(--bsc-borde);
+    border-radius: var(--radius-md);
+    color: var(--texto-primario);
+    line-height: 1.6;
+}
+
+/* Header ejecutivo */
+.ta-header-ejecutivo {
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: var(--sp-4);
+    padding: var(--sp-5);
+    color: #fff;
+    background: linear-gradient(135deg, var(--bsc-azul-profundo), var(--bsc-azul));
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+}
+.ta-header-ejecutivo h1 { font-size: clamp(1.4rem, 2.4vw, 2rem); font-weight: 600; margin: 0; }
+.ta-header-ejecutivo .periodo { font-size: 1.05rem; opacity: .9; }
+.ta-header-ejecutivo .meta { font-size: .8rem; opacity: .75; }
+
+/* Secciones del sidebar */
+.nav-seccion {
+    padding: var(--sp-4) var(--sp-4) var(--sp-1);
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, .45);
+}
+
+/* Tarjeta de técnico seleccionada (drill-down abierto) */
+.ta-tecnico-activo {
+    border-color: var(--bsc-azul) !important;
+    background: var(--bsc-azul-suave);
+    box-shadow: var(--shadow-sm);
+}

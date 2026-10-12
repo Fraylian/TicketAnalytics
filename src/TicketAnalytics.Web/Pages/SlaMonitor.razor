@@ -1,0 +1,128 @@
+@page "/sla"
+@inject TicketAnalyticsApi Api
+
+<PageTitle>SLA · TicketAnalytics</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">Monitor de SLA</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">Tiempos, vencimientos y cumplimiento en tiempo real</MudText>
+
+<FiltroPanel Filtro="_filtro" OnAplicar="Cargar" Contexto="sla" />
+
+@if (_cargando)
+{
+    <MudGrid Spacing="3">
+        @for (var i = 0; i < 4; i++)
+        {
+            <MudItem xs="12" sm="6" md="3"><MudSkeleton Height="110px" /></MudItem>
+        }
+    </MudGrid>
+}
+else if (_resumen is not null)
+{
+    <MudGrid Spacing="3" Class="mb-2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="1">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Cumplimiento SLA</MudText>
+                <MudText Typo="Typo.h3" Style="color:#2E7D32;">@_resumen.PctCumplimiento%</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_resumen.DentroSla de @_resumen.Total tickets</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="1" Style="border-left:4px solid #C62828;">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Vencidos</MudText>
+                <MudText Typo="Typo.h3" Style="color:#C62828;">@_resumen.Vencidos</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">requieren atención inmediata</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="1" Style="border-left:4px solid #ED6C02;">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Próximos a vencer</MudText>
+                <MudText Typo="Typo.h3" Style="color:#ED6C02;">@_resumen.ProximosAVencer</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">80%+ de SLA consumido</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4 kpi-card" Elevation="1">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary">Prom. resolución</MudText>
+                <MudText Typo="Typo.h3" Color="Color.Primary">@_resumen.PromedioHorasResolucion.ToString("0.#")h</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_resumen.EnCurso en curso</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1" Style="height:100%;">
+                <div class="d-flex align-center mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error" Class="mr-2" />
+                    <MudText Typo="Typo.h6">Tickets vencidos</MudText>
+                </div>
+                @if (_vencidos.Any())
+                {
+                    <MudTable Items="_vencidos" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="360px">
+                        <HeaderContent>
+                            <MudTh>Ticket</MudTh><MudTh>Apertura</MudTh><MudTh>Venció</MudTh>
+                            <MudTh Style="text-align:right">% Consumido</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd><b>@context.NoTicket</b></MudTd>
+                            <MudTd>@context.FechaApertura?.ToString("dd/MM/yy")</MudTd>
+                            <MudTd>@context.FechaVencimiento?.ToString("dd/MM/yy")</MudTd>
+                            <MudTd Style="text-align:right">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Error">@context.PctConsumido?.ToString("0")%</MudChip>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+                else { <MudText Typo="Typo.body2" Class="mud-text-secondary">No hay tickets vencidos. Buen trabajo.</MudText> }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-4" Elevation="1" Style="height:100%;">
+                <div class="d-flex align-center mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Timer" Color="Color.Warning" Class="mr-2" />
+                    <MudText Typo="Typo.h6">Próximos a vencer</MudText>
+                </div>
+                @if (_proximos.Any())
+                {
+                    <MudTable Items="_proximos" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="360px">
+                        <HeaderContent>
+                            <MudTh>Ticket</MudTh><MudTh Style="text-align:right">Horas restantes</MudTh><MudTh>Progreso</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd><b>@context.NoTicket</b></MudTd>
+                            <MudTd Style="text-align:right">@context.HorasRestantes?.ToString("0.#")h</MudTd>
+                            <MudTd style="width:40%">
+                                <MudProgressLinear Color="Color.Warning" Value="@(context.PctConsumido ?? 0)" Size="Size.Medium" Rounded="true" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+                else { <MudText Typo="Typo.body2" Class="mud-text-secondary">Ningún ticket próximo a vencer.</MudText> }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private TicketFiltro _filtro = new();
+    private ResumenSlaDto? _resumen;
+    private List<SlaTicketDto> _vencidos = new();
+    private List<SlaTicketDto> _proximos = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true; StateHasChanged();
+        try
+        {
+            _resumen = await Api.SlaResumenAsync(_filtro);
+            _vencidos = await Api.SlaVencidosAsync(_filtro);
+            _proximos = await Api.SlaProximosAVencerAsync(_filtro);
+        }
+        finally { _cargando = false; StateHasChanged(); }
+    }
+}

@@ -1,0 +1,37 @@
+@inject TicketAnalyticsApi Api
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_req.RefNum" Label="No. de ticket *" Variant="Variant.Outlined" Class="mb-3" Required="true" />
+        <MudSelect T="string" @bind-Value="_req.TipoCaso" Label="Tipo de caso" Variant="Variant.Outlined" Class="mb-3">
+            <MudSelectItem T="string" Value="@("Solicitud")">Solicitud</MudSelectItem>
+            <MudSelectItem T="string" Value="@("Incidente")">Incidente</MudSelectItem>
+        </MudSelect>
+        <MudTextField @bind-Value="_req.TecnicoResponsable" Label="Técnico responsable" Variant="Variant.Outlined" Class="mb-3" />
+        <MudTextField @bind-Value="_req.Categoria" Label="Categoría" Variant="Variant.Outlined" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancelar">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Guardar" Disabled="@(string.IsNullOrWhiteSpace(_req.RefNum) || _guardando)">
+            @(_guardando ? "Guardando..." : "Crear")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    private CrearSeguimientoRequest _req = new();
+    private bool _guardando;
+
+    private async Task Guardar()
+    {
+        _guardando = true;
+        try
+        {
+            var r = await Api.CrearSeguimientoAsync(_req);
+            MudDialog.Close(DialogResult.Ok(r));
+        }
+        catch { _guardando = false; }
+    }
+    private void Cancelar() => MudDialog.Cancel();
+}

@@ -1,0 +1,633 @@
+@page "/trabajo-diario"
+@inject TicketAnalyticsApi Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Diario TI · TicketAnalytics</PageTitle>
+
+<div class="d-flex justify-space-between align-center mb-4">
+    <div>
+        <h1 class="seccion-titulo">Diario de actividades TI</h1>
+        <p class="seccion-bajada">Registro y seguimiento del trabajo del equipo de Tecnología</p>
+    </div>
+    <div class="d-flex align-center gap-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@(_formVisible ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.Add)"
+                   OnClick="@(() => _formVisible = !_formVisible)">
+            @(_formVisible ? "Ocultar formulario" : "Nueva actividad")
+        </MudButton>
+        <MudChip T="string" Icon="@Icons.Material.Filled.CalendarToday" Color="Color.Primary" Variant="Variant.Text">
+            @DateTime.Today.ToString("dddd, dd 'de' MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-DO"))
+        </MudChip>
+    </div>
+</div>
+
+<!-- ===== FORMULARIO (plegable) ===== -->
+<MudCollapse Expanded="_formVisible">
+<div class="panel mb-4">
+    <h2 class="panel-titulo">
+        <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" Color="Color.Primary" />
+        @(_form.ActividadId.HasValue ? "Editar actividad" : "Nueva actividad")
+    </h2>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" sm="6" md="3">
+            <MudDatePicker Label="Fecha *" @bind-Date="_fecha" DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="int" @bind-Value="_form.TecnicoId" Label="Técnico TI *" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true">
+                @foreach (var t in _tecnicos)
+                {
+                    <MudSelectItem T="int" Value="@t.TecnicoId">@t.Nombre</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="int" @bind-Value="_form.Tipo" Label="Tipo *" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true">
+                @foreach (var t in TrabajoDiarioCatalogos.Tipos)
+                {
+                    <MudSelectItem T="int" Value="@t.Id">@t.Texto</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <!-- No. Solicitud: autocompletar con tickets/OC reales, permite texto libre -->
+            <MudAutocomplete T="OpcionTicketDto" Label="No. Solicitud / Ticket" @bind-Value="_ticketSel"
+                             SearchFunc="BuscarTickets" ToStringFunc="@(o => o?.RefNum ?? "")"
+                             Variant="Variant.Outlined" Margin="Margin.Dense" CoerceText="false" CoerceValue="true"
+                             DebounceInterval="300" MinCharacters="3" Clearable="true"
+                             AdornmentIcon="@Icons.Material.Filled.Search"
+                             HelperText="Escribe 3+ caracteres para buscar, o escribe libre">
+                <ItemTemplate Context="op">
+                    <div class="d-flex flex-column">
+                        <MudText Typo="Typo.body2"><b>@op.RefNum</b> · @(op.TipoVinculo == "chg" ? "OC" : "Ticket")</MudText>
+                        @if (!string.IsNullOrEmpty(op.Descripcion))
+                        {
+                            <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">@op.Descripcion</MudText>
+                        }
+                    </div>
+                </ItemTemplate>
+                <NoItemsTemplate>
+                    <MudText Typo="Typo.caption" Class="pa-2">Sin coincidencias. Puedes escribirlo libre abajo.</MudText>
+                </NoItemsTemplate>
+            </MudAutocomplete>
+            <MudTextField @bind-Value="_form.NoSolicitud" Placeholder="O escríbelo libre: JIRA-101" Variant="Variant.Text" Margin="Margin.Dense" Class="mt-1" />
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudTextField @bind-Value="_form.Proyecto" Label="Proyecto" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="EIKON, Nómina…" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudNumericField @bind-Value="_form.Horas" Label="Horas trabajadas *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                             Min="0" Max="24" Step="0.25M" Format="0.##" Required="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="int" @bind-Value="_form.Estado" Label="Estado *" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true">
+                @foreach (var e in TrabajoDiarioCatalogos.Estados)
+                {
+                    <MudSelectItem T="int" Value="@e.Id">@e.Texto</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudTextField @bind-Value="_form.Usuario" Label="Tu nombre (auditoría)" Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_form.Actividad" Label="Actividad realizada *" Variant="Variant.Outlined"
+                          Lines="2" Placeholder="Describe el trabajo de manera específica…" Required="true" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_form.Comentario" Label="Comentarios / observaciones" Variant="Variant.Outlined"
+                          Lines="2" Placeholder="Opcional: bloqueos, resultados…" />
+        </MudItem>
+
+        <MudItem xs="12" Class="d-flex justify-end gap-2">
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LimpiarForm">Limpiar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Save"
+                       OnClick="Guardar" Disabled="@_guardando">
+                @(_guardando ? "Guardando…" : _form.ActividadId.HasValue ? "Actualizar" : "Guardar actividad")
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</div>
+</MudCollapse>
+
+<!-- ===== Filtros rápidos ===== -->
+<div class="d-flex align-center gap-2 mb-3 flex-wrap">
+    <MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">Período:</MudText>
+    @foreach (var (label, dias) in RangosRapidos)
+    {
+        <MudChip T="string" Size="Size.Small" Variant="@(_rangoActivo == label ? Variant.Filled : Variant.Outlined)"
+                 Color="Color.Primary" OnClick="@(() => AplicarRango(label, dias))">@label</MudChip>
+    }
+    <MudChip T="string" Size="Size.Small" Variant="@(_soloPendientes ? Variant.Filled : Variant.Outlined)"
+             Color="Color.Warning" OnClick="ToggleSoloPendientes">Pendientes</MudChip>
+    <MudChip T="string" Size="Size.Small" Variant="@(_soloBloqueadas ? Variant.Filled : Variant.Outlined)"
+             Color="Color.Error" OnClick="ToggleSoloBloqueadas">Bloqueadas</MudChip>
+    <MudSpacer />
+    <MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">
+        @(_ultimaCarga is null ? "" : $"Actualizado {_ultimaCarga:HH:mm:ss}")
+    </MudText>
+    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" Color="Color.Primary" OnClick="RecargarTodo" />
+</div>
+
+<!-- ===== KPIs principales ===== -->
+<MudGrid Spacing="3" Class="mb-3">
+    <MudItem xs="6" md="2"><KpiCard Titulo="Total actividades" Valor="@_resumen.TotalActividades.ToString()" Icono="@Icons.Material.Filled.Assignment" Acento="azul" Tendencia="@TendenciaActividades" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Total horas" Valor="@($"{_resumen.TotalHoras:0.0}h")" Icono="@Icons.Material.Filled.Schedule" Acento="verde" Tendencia="@TendenciaHoras" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Completadas" Valor="@_resumen.Completadas.ToString()" Icono="@Icons.Material.Filled.CheckCircle" Acento="cumplido" Nota="@($"{_resumen.PctCompletadas:0.#}%")" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Pendientes" Valor="@_resumen.Pendientes.ToString()" Icono="@Icons.Material.Filled.PendingActions" Acento="riesgo" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="En proceso" Valor="@_resumen.EnProceso.ToString()" Icono="@Icons.Material.Filled.Autorenew" Acento="azul" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Bloqueadas" Valor="@_resumen.Bloqueadas.ToString()" Icono="@Icons.Material.Filled.Block" Acento="vencido" /></MudItem>
+</MudGrid>
+
+<!-- ===== KPIs secundarios ===== -->
+<MudGrid Spacing="3" Class="mb-4">
+    <MudItem xs="6" md="2"><KpiCard Titulo="Horas hoy" Valor="@($"{_resumen.HorasHoy:0.0}h")" Icono="@Icons.Material.Filled.Today" Acento="azul" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Horas semana" Valor="@($"{_resumen.HorasSemana:0.0}h")" Icono="@Icons.Material.Filled.DateRange" Acento="azul" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Horas mes" Valor="@($"{_resumen.HorasMes:0.0}h")" Icono="@Icons.Material.Filled.CalendarMonth" Acento="azul" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Prom h/actividad" Valor="@($"{_resumen.PromedioHorasPorActividad:0.0}h")" Icono="@Icons.Material.Filled.Timelapse" Acento="neutro" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="OC trabajadas" Valor="@_resumen.OrdenesCambioTrabajadas.ToString()" Icono="@Icons.Material.Filled.ChangeCircle" Acento="neutro" /></MudItem>
+    <MudItem xs="6" md="2"><KpiCard Titulo="Incidentes" Valor="@_resumen.IncidentesTrabajados.ToString()" Icono="@Icons.Material.Filled.ReportProblem" Acento="neutro" /></MudItem>
+</MudGrid>
+
+@if (!string.IsNullOrEmpty(_resumen.TecnicoMasHoras) || !string.IsNullOrEmpty(_resumen.ProyectoMasDedicacion))
+{
+    <MudGrid Spacing="3" Class="mb-4">
+        <MudItem xs="12" md="4"><div class="panel"><MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">TÉCNICO CON MÁS HORAS</MudText><MudText Typo="Typo.h6">@(_resumen.TecnicoMasHoras ?? "—")</MudText></div></MudItem>
+        <MudItem xs="12" md="4"><div class="panel"><MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">TÉCNICO CON MÁS ACTIVIDADES</MudText><MudText Typo="Typo.h6">@(_resumen.TecnicoMasActividades ?? "—")</MudText></div></MudItem>
+        <MudItem xs="12" md="4"><div class="panel"><MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">PROYECTO CON MÁS DEDICACIÓN</MudText><MudText Typo="Typo.h6">@(_resumen.ProyectoMasDedicacion ?? "—")</MudText></div></MudItem>
+    </MudGrid>
+}
+
+<MudGrid Spacing="3" Class="mb-4">
+    <!-- Carga por técnico -->
+    <MudItem xs="12" md="5">
+        <div class="panel" style="height:100%">
+            <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.Groups" Size="Size.Small" Color="Color.Primary" /> Carga por técnico</h2>
+            @if (_resumen.PorTecnico.Any())
+            {
+                @foreach (var t in _resumen.PorTecnico)
+                {
+                    <div class="mb-3 pa-2" style="@($"border-radius:8px;cursor:pointer;border:1px solid {(_tecnicoSel == t.Tecnico ? "var(--bsc-azul)" : "transparent")};background:{(_tecnicoSel == t.Tecnico ? "rgba(21,82,142,.04)" : "transparent")}")"
+                         @onclick="@(() => FiltrarPorTecnico(t.Tecnico))">
+                        <div class="d-flex justify-space-between align-center mb-1">
+                            <div class="d-flex align-center gap-1">
+                                <MudText Typo="Typo.body2"><b>@t.Tecnico</b></MudText>
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Filled"
+                                         Color="@(t.NivelCarga == "alta" ? Color.Error : t.NivelCarga == "media" ? Color.Warning : Color.Success)"
+                                         Style="height:16px;font-size:.62rem">@t.NivelCarga</MudChip>
+                            </div>
+                            <div class="d-flex gap-1">
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">@t.Completadas ✓</MudChip>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">@t.PendientesEnProceso</MudChip>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Primary">@t.Horas.ToString("0.0")h</MudChip>
+                            </div>
+                        </div>
+                        <MudProgressLinear Color="@(t.NivelCarga == "alta" ? Color.Error : Color.Success)" Value="@t.PctDelTotalHoras" Size="Size.Medium" Rounded="true" />
+                        <div class="d-flex justify-space-between mt-1">
+                            <MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">
+                                @t.PctFinalizacion.ToString("0")% finalización · @t.PromedioHorasPorActividad.ToString("0.#")h/act
+                            </MudText>
+                            @if (!string.IsNullOrEmpty(t.ProyectoPrincipal))
+                            {
+                                <MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">@t.ProyectoPrincipal</MudText>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (_tecnicoSel is not null)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="@(() => FiltrarPorTecnico(_tecnicoSel!))">Quitar filtro de @_tecnicoSel</MudButton>
+                }
+            }
+            else { <EmptyState Mensaje="Sin registros en el período." /> }
+        </div>
+    </MudItem>
+
+    <!-- Gráficos -->
+    <MudItem xs="12" md="7">
+        <div class="panel" style="height:100%">
+            <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.InsertChart" Size="Size.Small" Color="Color.Primary" /> Indicadores</h2>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">Horas por técnico</MudText>
+                    @if (_resumen.PorTecnico.Any())
+                    {
+                        <ApexChart TItem="CargaTecnicoDto" Options="@_optBarras" Height="180">
+                            <ApexPointSeries TItem="CargaTecnicoDto" Items="_resumen.PorTecnico" Name="Horas"
+                                             XValue="@(t => Acortar(t.Tecnico))" YValue="@(t => t.Horas)" SeriesType="SeriesType.Bar" />
+                        </ApexChart>
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">Actividades por tipo</MudText>
+                    @if (_resumen.PorTipo.Any())
+                    {
+                        <ApexChart TItem="ConteoDto" Options="@_optDona" Height="180">
+                            <ApexPointSeries TItem="ConteoDto" Items="_resumen.PorTipo" Name="Tipo"
+                                             XValue="@(x => x.Etiqueta)" YAggregate="@(g => g.Sum(x => x.Cantidad))" SeriesType="SeriesType.Donut" />
+                        </ApexChart>
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">Por estado</MudText>
+                    @if (_resumen.PorEstado.Any())
+                    {
+                        <ApexChart TItem="ConteoDto" Options="@_optPastel" Height="180">
+                            <ApexPointSeries TItem="ConteoDto" Items="_resumen.PorEstado" Name="Estado"
+                                             XValue="@(x => x.Etiqueta)" YAggregate="@(g => g.Sum(x => x.Cantidad))" SeriesType="SeriesType.Pie" />
+                        </ApexChart>
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">Horas por día</MudText>
+                    @if (_resumen.HorasPorDia.Any())
+                    {
+                        <ApexChart TItem="HorasDiaDto" Options="@_optLinea" Height="180">
+                            <ApexPointSeries TItem="HorasDiaDto" Items="_resumen.HorasPorDia" Name="Horas"
+                                             XValue="@(d => d.Dia.ToString("dd/MM"))" YValue="@(d => d.Horas)" SeriesType="SeriesType.Area" />
+                        </ApexChart>
+                    }
+                </MudItem>
+            </MudGrid>
+        </div>
+    </MudItem>
+</MudGrid>
+
+<!-- ===== Gráficos ampliados ===== -->
+<MudGrid Spacing="3" Class="mb-4">
+    <MudItem xs="12" md="6">
+        <ChartPanel Titulo="Top proyectos por esfuerzo" Icono="@Icons.Material.Filled.WorkHistory" Vacio="@(!_resumen.HorasPorProyecto.Any())">
+            <ApexChart TItem="ConteoDto" Options="@_optBarrasH" Height="260">
+                <ApexPointSeries TItem="ConteoDto" Items="_resumen.HorasPorProyecto" Name="Horas" XValue="@(x => x.Etiqueta)" YValue="@(x => (decimal)x.Horas)" SeriesType="SeriesType.Bar" />
+            </ApexChart>
+        </ChartPanel>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <ChartPanel Titulo="Completadas contra pendientes por técnico" Icono="@Icons.Material.Filled.Compare" Vacio="@(!_resumen.CompletadasVsPendientes.Any())">
+            <ApexChart TItem="CompletadasVsPendientesDto" Options="@_optBarrasComp" Height="260">
+                <ApexPointSeries TItem="CompletadasVsPendientesDto" Items="_resumen.CompletadasVsPendientes" Name="Completadas" XValue="@(x => Acortar(x.Tecnico))" YValue="@(x => (decimal)x.Completadas)" SeriesType="SeriesType.Bar" />
+                <ApexPointSeries TItem="CompletadasVsPendientesDto" Items="_resumen.CompletadasVsPendientes" Name="Pendientes" XValue="@(x => Acortar(x.Tecnico))" YValue="@(x => (decimal)x.Pendientes)" SeriesType="SeriesType.Bar" />
+            </ApexChart>
+        </ChartPanel>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <ChartPanel Titulo="Horas por semana" Icono="@Icons.Material.Filled.ViewWeek" Vacio="@(!_resumen.HorasPorSemana.Any())">
+            <ApexChart TItem="HorasPeriodoDto" Options="@_optArea" Height="240">
+                <ApexPointSeries TItem="HorasPeriodoDto" Items="_resumen.HorasPorSemana" Name="Horas" XValue="@(x => x.Periodo)" YValue="@(x => x.Horas)" SeriesType="SeriesType.Area" />
+            </ApexChart>
+        </ChartPanel>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <ChartPanel Titulo="Tickets atendidos por técnico" Icono="@Icons.Material.Filled.ConfirmationNumber" Vacio="@(!_resumen.TicketsPorTecnico.Any())">
+            <ApexChart TItem="ConteoDto" Options="@_optBarrasTickets" Height="240">
+                <ApexPointSeries TItem="ConteoDto" Items="_resumen.TicketsPorTecnico" Name="Tickets" XValue="@(x => Acortar(x.Etiqueta))" YValue="@(x => (decimal)x.Cantidad)" SeriesType="SeriesType.Bar" />
+            </ApexChart>
+        </ChartPanel>
+    </MudItem>
+</MudGrid>
+
+<!-- ===== TABLA ===== -->
+<div class="panel">
+    <div class="d-flex justify-space-between align-center mb-3 flex-wrap gap-2">
+        <MudTextField @bind-Value="_filtro.Texto" Placeholder="Búsqueda rápida en cualquier campo…" Variant="Variant.Outlined"
+                      Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="false" OnKeyUp="@(async e => { if (e.Key == "Enter") await Recargar(); })" Style="max-width:420px" />
+        <div class="d-flex gap-2">
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="Recargar">Buscar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.TableView" OnClick="ExportarExcel">Exportar a Excel</MudButton>
+        </div>
+    </div>
+
+    <MudTable ServerData="CargarTabla" @ref="_tabla" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" T="ActividadDto">
+        <HeaderContent>
+            <MudTh>Fecha</MudTh><MudTh>Técnico</MudTh><MudTh>Actividad</MudTh><MudTh>Tipo</MudTh>
+            <MudTh>No. Solicitud</MudTh><MudTh>Proyecto</MudTh><MudTh Style="text-align:right">Horas</MudTh>
+            <MudTh>Estado</MudTh><MudTh>Acciones</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Fecha">@context.Fecha.ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Técnico"><b>@context.TecnicoNombre</b></MudTd>
+            <MudTd DataLabel="Actividad" Style="max-width:260px">@context.Actividad</MudTd>
+            <MudTd DataLabel="Tipo"><MudChip T="string" Size="Size.Small" Variant="Variant.Text">@context.TipoTexto</MudChip></MudTd>
+            <MudTd DataLabel="No. Solicitud">
+                @if (!string.IsNullOrEmpty(context.RefNumVinculado))
+                {
+                    <MudTooltip Text="@($"Enlazado a {(context.TipoVinculo == "chg" ? "OC" : "ticket")} real de mdb")">
+                        <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Text"
+                                 Icon="@Icons.Material.Filled.Link" OnClick="@(() => VerDesglose(context.RefNumVinculado!))">@context.RefNumVinculado</MudChip>
+                    </MudTooltip>
+                }
+                else if (!string.IsNullOrEmpty(context.NoSolicitud)) { <span>@context.NoSolicitud</span> }
+                else { <span style="color:var(--texto-tenue)">—</span> }
+            </MudTd>
+            <MudTd DataLabel="Proyecto">@(context.Proyecto ?? "—")</MudTd>
+            <MudTd DataLabel="Horas" Style="text-align:right"><b>@context.Horas.ToString("0.##")h</b></MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Size="Size.Small" Color="@EstadoColor(context.Estado)" Variant="Variant.Filled">@context.EstadoTexto</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Acciones">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="@(() => Editar(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => Eliminar(context))" />
+                @if (!string.IsNullOrEmpty(context.Comentario))
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.Comment" Size="Size.Small" OnClick="@(() => VerComentario(context))" />
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent><div class="vacio"><MudText>Sin actividades registradas.</MudText></div></NoRecordsContent>
+        <PagerContent><MudTablePager PageSizeOptions="new[]{10,25,50}" /></PagerContent>
+    </MudTable>
+</div>
+
+@code {
+    private List<TecnicoDto> _tecnicos = new();
+    private GuardarActividadRequest _form = new();
+    private DateTime? _fecha = DateTime.Today;
+    private OpcionTicketDto? _ticketSel;
+    private bool _guardando;
+
+    private async Task<IEnumerable<OpcionTicketDto>> BuscarTickets(string valor, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(valor) || valor.Length < 3) return Array.Empty<OpcionTicketDto>();
+        try { return await Api.BuscarTicketsMdbAsync(valor); }
+        catch { return Array.Empty<OpcionTicketDto>(); }
+    }
+
+    private void LimpiarForm()
+    {
+        _form = new GuardarActividadRequest { Usuario = _form.Usuario };
+        _fecha = DateTime.Today;
+        _ticketSel = null;
+    }
+
+    private async Task Guardar()
+    {
+        _guardando = true;
+        try
+        {
+            _form.Fecha = DateOnly.FromDateTime(_fecha ?? DateTime.Today);
+            // Si eligió un ticket real, enlazarlo; si no, queda el texto libre
+            if (_ticketSel is not null)
+            {
+                _form.RefNumVinculado = _ticketSel.RefNum;
+                _form.TipoVinculo = _ticketSel.TipoVinculo;
+                if (string.IsNullOrWhiteSpace(_form.NoSolicitud)) _form.NoSolicitud = _ticketSel.RefNum;
+            }
+            await Api.GuardarActividadAsync(_form);
+            Snackbar.Add("Actividad guardada", Severity.Success);
+            LimpiarForm();
+            await RecargarTodo();
+        }
+        catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    // Continúa en la parte 2 (KPIs, gráficos, tabla)...
+
+    private ResumenJornadaDto _resumen = new();
+    private ActividadFiltro _filtro = new();
+    private MudTable<ActividadDto>? _tabla;
+
+    private bool _formVisible = true;
+    private string? _tecnicoSel;
+    private string _rangoActivo = "";
+    private bool _soloPendientes;
+    private bool _soloBloqueadas;
+    private DateTime? _ultimaCarga;
+
+    private readonly (string, int)[] RangosRapidos = new[]
+    {
+        ("Hoy", 0), ("7 días", 7), ("Este mes", -1), ("Mes anterior", -2), ("30 días", 30)
+    };
+
+    private double? TendenciaActividades => _resumen.TotalActividadesAnterior == 0 ? null
+        : Math.Round(100.0 * (_resumen.TotalActividades - _resumen.TotalActividadesAnterior) / _resumen.TotalActividadesAnterior, 0);
+    private double? TendenciaHoras => _resumen.TotalHorasAnterior == 0 ? null
+        : Math.Round(100.0 * (double)(_resumen.TotalHoras - _resumen.TotalHorasAnterior) / (double)_resumen.TotalHorasAnterior, 0);
+
+    private ApexChartOptions<CargaTecnicoDto> _optBarras = new();
+    private ApexChartOptions<ConteoDto> _optDona = new();
+    private ApexChartOptions<ConteoDto> _optPastel = new();
+    private ApexChartOptions<HorasDiaDto> _optLinea = new();
+    private ApexChartOptions<ConteoDto> _optBarrasH = new();
+    private ApexChartOptions<ConteoDto> _optBarrasTickets = new();
+    private ApexChartOptions<CompletadasVsPendientesDto> _optBarrasComp = new();
+    private ApexChartOptions<HorasPeriodoDto> _optArea = new();
+
+    protected override void OnInitialized()
+    {
+        _optBarras = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = new() { "#15528E" }, DataLabels = new ApexCharts.DataLabels { Enabled = false } };
+        _optDona = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = ColoresBase, Legend = new Legend { Position = LegendPosition.Bottom, FontSize = "10px" } };
+        _optPastel = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = ColoresEstado, Legend = new Legend { Position = LegendPosition.Bottom, FontSize = "10px" } };
+        _optLinea = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = new() { "#76B82A" }, Stroke = new Stroke { Curve = Curve.Smooth, Width = 2 }, DataLabels = new ApexCharts.DataLabels { Enabled = false } };
+        _optBarrasH = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = new() { "#76B82A" }, PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } }, DataLabels = new ApexCharts.DataLabels { Enabled = false } };
+        _optBarrasTickets = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = new() { "#15528E" }, DataLabels = new ApexCharts.DataLabels { Enabled = false } };
+        _optBarrasComp = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = new() { "#2E7D32", "#ED6C02" }, DataLabels = new ApexCharts.DataLabels { Enabled = false }, Legend = new Legend { Position = LegendPosition.Top } };
+        _optArea = new() { Chart = new Chart { Toolbar = new Toolbar { Show = false } }, Colors = new() { "#15528E" }, Stroke = new Stroke { Curve = Curve.Smooth, Width = 2 }, DataLabels = new ApexCharts.DataLabels { Enabled = false } };
+    }
+
+    private static readonly List<string> ColoresBase = new() { "#15528E", "#5A9BD5", "#76B82A", "#ED6C02", "#0F3D6B", "#C62828" };
+    private static readonly List<string> ColoresEstado = new() { "#ED6C02", "#15528E", "#2E7D32", "#C62828", "#8FA3B8" };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var todos = await Api.TecnicosAsync();
+        var grupo = await Api.GrupoAnalistasAsync();
+        // Limitar a los analistas del grupo; si el filtro deja vacío, usar todos (fallback seguro)
+        var filtrados = todos.Where(t => grupo.Any(g =>
+            g.Equals(t.Nombre, StringComparison.OrdinalIgnoreCase)
+            || g.Contains(t.Nombre, StringComparison.OrdinalIgnoreCase)
+            || t.Nombre.Contains(g, StringComparison.OrdinalIgnoreCase))).ToList();
+        _tecnicos = filtrados.Any() ? filtrados : todos.ToList();
+
+        // Si no hay técnicos en absoluto, intentar sincronizar desde mdb
+        if (!_tecnicos.Any())
+        {
+            try { await Api.SincronizarTecnicosAsync(); _tecnicos = (await Api.TecnicosAsync()).ToList(); } catch { }
+        }
+        await CargarResumen();
+    }
+
+    private bool _debeRenderizar = true;
+    protected override bool ShouldRender()
+    {
+        if (_debeRenderizar) { _debeRenderizar = false; return true; }
+        return false;
+    }
+    private void Render() { _debeRenderizar = true; StateHasChanged(); }
+
+    private async Task RecargarTodo()
+    {
+        await CargarResumen();
+        if (_tabla is not null) await _tabla.ReloadServerData();
+    }
+
+    private async Task CargarResumen()
+    {
+        try { _resumen = await Api.ResumenJornadaAsync(_filtro); _ultimaCarga = DateTime.Now; Render(); }
+        catch (Exception ex) { Snackbar.Add($"No se pudo cargar el resumen: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task AplicarRango(string label, int dias)
+    {
+        _rangoActivo = _rangoActivo == label ? "" : label;
+        if (_rangoActivo == "")
+        {
+            _filtro.FechaDesde = null; _filtro.FechaHasta = null;
+        }
+        else
+        {
+            var hoy = DateOnly.FromDateTime(DateTime.Today);
+            if (dias == 0) { _filtro.FechaDesde = hoy; _filtro.FechaHasta = hoy; }
+            else if (dias == -1) { _filtro.FechaDesde = new DateOnly(hoy.Year, hoy.Month, 1); _filtro.FechaHasta = hoy; }
+            else if (dias == -2)
+            {
+                var primerMesAnt = new DateOnly(hoy.Year, hoy.Month, 1).AddMonths(-1);
+                _filtro.FechaDesde = primerMesAnt; _filtro.FechaHasta = new DateOnly(hoy.Year, hoy.Month, 1).AddDays(-1);
+            }
+            else { _filtro.FechaDesde = hoy.AddDays(-dias); _filtro.FechaHasta = hoy; }
+        }
+        await RecargarTodo();
+    }
+
+    private async Task ToggleSoloPendientes()
+    {
+        _soloPendientes = !_soloPendientes;
+        if (_soloPendientes) { _soloBloqueadas = false; _filtro.Estado = 0; }
+        else if (_filtro.Estado == 0) _filtro.Estado = null;
+        await RecargarTodo();
+    }
+
+    private async Task ToggleSoloBloqueadas()
+    {
+        _soloBloqueadas = !_soloBloqueadas;
+        if (_soloBloqueadas) { _soloPendientes = false; _filtro.Estado = 3; }
+        else if (_filtro.Estado == 3) _filtro.Estado = null;
+        await RecargarTodo();
+    }
+
+    private async Task FiltrarPorTecnico(string tecnico)
+    {
+        if (_tecnicoSel == tecnico)
+        {
+            _tecnicoSel = null; _filtro.TecnicoId = null;
+        }
+        else
+        {
+            _tecnicoSel = tecnico;
+            var t = _tecnicos.FirstOrDefault(x => x.Nombre == tecnico);
+            _filtro.TecnicoId = t?.TecnicoId;
+        }
+        await RecargarTodo();
+    }
+
+    private async Task<TableData<ActividadDto>> CargarTabla(TableState state, CancellationToken ct)
+    {
+        _filtro.Page = state.Page + 1;
+        _filtro.PageSize = state.PageSize;
+        try
+        {
+            var r = await Api.BuscarActividadesAsync(_filtro);
+            return new TableData<ActividadDto> { Items = r.Items, TotalItems = r.TotalCount };
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar: {ex.Message}", Severity.Error);
+            return new TableData<ActividadDto> { Items = new List<ActividadDto>(), TotalItems = 0 };
+        }
+    }
+
+    private async Task Recargar()
+    {
+        await CargarResumen();
+        if (_tabla is not null) await _tabla.ReloadServerData();
+    }
+
+    private double PorcentajeHoras(decimal horas)
+    {
+        var max = _resumen.PorTecnico.Any() ? _resumen.PorTecnico.Max(t => t.Horas) : 0;
+        return max > 0 ? (double)(horas / max * 100) : 0;
+    }
+
+    private static string Acortar(string n)
+    {
+        var p = n.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return p.Length >= 1 ? p[0] : n;
+    }
+
+    private static Color EstadoColor(int estado) => estado switch
+    {
+        0 => Color.Warning,   // Pendiente
+        1 => Color.Info,      // En proceso
+        2 => Color.Success,   // Completado
+        3 => Color.Error,     // Bloqueado
+        _ => Color.Default    // Cancelado
+    };
+
+    private void Editar(ActividadDto a)
+    {
+        _form = new GuardarActividadRequest
+        {
+            ActividadId = a.ActividadId, TecnicoId = a.TecnicoId, Actividad = a.Actividad, Tipo = a.Tipo,
+            NoSolicitud = a.NoSolicitud, RefNumVinculado = a.RefNumVinculado, TipoVinculo = a.TipoVinculo,
+            Proyecto = a.Proyecto, Horas = a.Horas, Estado = a.Estado, Comentario = a.Comentario, Usuario = _form.Usuario
+        };
+        _fecha = a.Fecha.ToDateTime(TimeOnly.MinValue);
+        _ticketSel = string.IsNullOrEmpty(a.RefNumVinculado) ? null
+            : new OpcionTicketDto { RefNum = a.RefNumVinculado, TipoVinculo = a.TipoVinculo ?? "cr" };
+        _formVisible = true;
+        Render();
+    }
+
+    private async Task Eliminar(ActividadDto a)
+    {
+        var ok = await DialogService.ShowMessageBox("Eliminar actividad",
+            $"¿Eliminar la actividad de {a.TecnicoNombre} del {a.Fecha:dd/MM/yyyy}?",
+            yesText: "Eliminar", cancelText: "Cancelar");
+        if (ok == true)
+        {
+            try { await Api.EliminarActividadAsync(a.ActividadId); Snackbar.Add("Eliminada", Severity.Success); await RecargarTodo(); }
+            catch (Exception ex) { Snackbar.Add(ex.Message, Severity.Error); }
+        }
+    }
+
+    private async Task VerComentario(ActividadDto a)
+        => await DialogService.ShowMessageBox($"Comentario · {a.TecnicoNombre}", a.Comentario ?? "");
+
+    private async Task VerDesglose(string refNum)
+    {
+        var acts = await Api.ActividadesDeTicketAsync(refNum);
+        var horas = acts.Sum(x => x.Horas);
+        var porTecnico = acts.Where(a => !string.IsNullOrEmpty(a.TecnicoNombre))
+            .GroupBy(a => a.TecnicoNombre!)
+            .Select(g => $"{g.Key}: {g.Sum(x => x.Horas):0.##}h")
+            .ToList();
+
+        var p = new DialogParameters
+        {
+            ["RefNum"] = refNum,
+            ["ResumenHoras"] = $"{acts.Count} actividades · {horas:0.##} horas en total",
+            ["DetalleTecnicos"] = porTecnico
+        };
+        await DialogService.ShowAsync<TimelineDialog>($"Trazabilidad · {refNum}", p,
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+    }
+
+    private async Task ExportarExcel()
+    {
+        try
+        {
+            var todo = new ActividadFiltro
+            {
+                FechaDesde = _filtro.FechaDesde, FechaHasta = _filtro.FechaHasta, TecnicoId = _filtro.TecnicoId,
+                Tipo = _filtro.Tipo, Estado = _filtro.Estado, Texto = _filtro.Texto, Page = 1, PageSize = 5000
+            };
+            var data = await Api.BuscarActividadesAsync(todo);
+            await CsvExport.DescargarActividadesAsync(data.Items);
+            Snackbar.Add($"Exportadas {data.Items.Count} actividades", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"No se pudo exportar: {ex.Message}", Severity.Error); }
+    }
+}
