@@ -149,10 +149,18 @@ public class OrdenCambioDashboardService : IOrdenCambioDashboardService
         var total = filtradas.Count;
 
         var pagina = f.Page < 1 ? 1 : f.Page;
-        var tam = f.PageSize is < 1 or > 200 ? 25 : f.PageSize;
+        // Mismo tope que la búsqueda de tickets (500). Antes era 200 y cualquier pedido
+        // mayor caía en silencio a 25 filas (exportaciones y panel por técnico incompletos).
+        var tam = f.PageSize is < 1 or > 500 ? 25 : f.PageSize;
         var items = Ordenar(filtradas, f).Skip((pagina - 1) * tam).Take(tam).ToList();
 
         return new PagedResult<OrdenCambioConTicketsDto> { Items = items, TotalCount = total, Page = pagina, PageSize = tam };
+    }
+
+    public async Task<List<OrdenCambioConTicketsDto>> BuscarTodasAsync(OrdenCambioFiltro f, CancellationToken ct = default)
+    {
+        var todas = await CargarEnriquecidasAsync(f, ct);
+        return Ordenar(AplicarFiltros(todas, f), f).ToList();
     }
 
     public async Task<OrdenCambioDashboardDto> DashboardAsync(OrdenCambioFiltro f, CancellationToken ct = default)

@@ -1,4 +1,6 @@
 @inherits LayoutComponentBase
+@inject NavigationManager Nav
+@implements IDisposable
 
 <MudThemeProvider Theme="@BancoTheme.Theme" />
 <MudPopoverProvider />
@@ -6,22 +8,36 @@
 <MudSnackbarProvider />
 
 <MudLayout>
-    <MudAppBar Elevation="2">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="ToggleDrawer" />
-        <img src="img/logo-bsc.png" alt="Banco Santa Cruz" style="height:34px;width:34px;object-fit:contain;background:#fff;border-radius:6px;padding:2px;" class="ml-2" />
-        <MudText Typo="Typo.h6" Class="ml-2">TicketAnalytics</MudText>
-        <MudText Typo="Typo.caption" Class="ml-2 mud-text-disabled" Style="color:#B9CBDF !important;">Banco Santa Cruz · Sistemas</MudText>
+    <MudAppBar Elevation="0" Style="box-shadow:0 2px 14px rgba(15,61,107,.25)">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                       aria-label="Mostrar u ocultar menú" OnClick="ToggleDrawer" />
+        <img src="img/logo-bsc.png" alt="Banco Santa Cruz" class="ta-logo ml-2" />
+        <div class="ta-appbar-marca ml-3">
+            <b>TicketAnalytics</b>
+            <span>Banco Santa Cruz · Sistemas</span>
+        </div>
         <MudSpacer />
-        <MudTooltip Text="Los tickets se leen de CA Service Desk sin modificarlos"><MudChip T="string" Icon="@Icons.Material.Filled.Storage" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Text" Style="color:#fff;">MDB · solo lectura</MudChip></MudTooltip>
+        <AlertasVencimiento />
+        <span class="ta-reloj d-none d-sm-inline-flex">
+            <MudIcon Icon="@Icons.Material.Filled.CalendarToday" Style="font-size:15px" />
+            @_ahora.ToString("ddd dd MMM · HH:mm", Cultura)
+        </span>
+        <MudTooltip Text="Los tickets se leen de CA Service Desk sin modificarlos">
+            <MudChip T="string" Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Variant="Variant.Outlined"
+                     Style="color:#fff;border-color:rgba(255,255,255,.35)">MDB · solo lectura</MudChip>
+        </MudTooltip>
     </MudAppBar>
 
     <MudDrawer @bind-Open="_drawerOpen" Elevation="1" Variant="DrawerVariant.Responsive" ClipMode="DrawerClipMode.Always">
-        <MudDrawerHeader Class="pb-2">
-            <MudText Typo="Typo.subtitle1" Style="color:#fff;font-weight:600;">Panel de análisis</MudText>
+        <MudDrawerHeader Class="pb-1">
+            <div>
+                <MudText Typo="Typo.subtitle1" Style="color:#fff;font-weight:650">Panel de análisis</MudText>
+                <MudText Typo="Typo.caption" Style="color:#8FA9C4">Sistemas Canales y Gestión</MudText>
+            </div>
         </MudDrawerHeader>
         <MudNavMenu>
             <div class="nav-seccion">Operación</div>
-            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.SpaceDashboard">Dashboard</MudNavLink>
             <MudNavLink Href="/tickets" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ConfirmationNumber">Tickets</MudNavLink>
             <MudNavLink Href="/sla" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Timer">Monitor SLA</MudNavLink>
 
@@ -29,26 +45,51 @@
             <MudNavLink Href="/seguimiento" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Assignment">Seguimiento</MudNavLink>
             <MudNavLink Href="/ordenes-cambio" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.ChangeCircle">Órdenes de cambio</MudNavLink>
             <MudNavLink Href="/analistas" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Analistas</MudNavLink>
+            @* Diario TI desactivado (2026-10-12): se retiró del aplicativo por decisión funcional.
+               El código se conserva (Pages/TrabajoDiario.razor) por si se retoma.
             <MudNavLink Href="/trabajo-diario" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EditCalendar">Diario TI</MudNavLink>
+            *@
             <MudNavLink Href="/proveedores" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Business">Proveedores</MudNavLink>
 
             <div class="nav-seccion">Reportes</div>
             <MudNavLink Href="/reporte-vp" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Summarize">Reporte mensual VP</MudNavLink>
         </MudNavMenu>
-        <MudSpacer />
-        <div class="pa-4" style="position:absolute;bottom:0;">
-            <MudText Typo="Typo.caption" Style="color:#8FA9C4;">Histórico desde 01-ene-2026</MudText>
+        <div class="ta-drawer-pie">
+            <div class="linea"><MudIcon Icon="@Icons.Material.Filled.History" Style="font-size:14px" /> Histórico desde 01-ene-2026</div>
+            <div class="linea"><MudIcon Icon="@Icons.Material.Filled.Shield" Style="font-size:14px" /> Datos de MDB en solo lectura</div>
         </div>
     </MudDrawer>
 
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="py-6">
-            @Body
+            @* La clave por ruta reinicia la animación de entrada en cada navegación
+               (sin recrear la página cuando solo cambia el query string). *@
+            <div class="ta-page" @key="RutaActual()">
+                @Body
+            </div>
         </MudContainer>
     </MudMainContent>
 </MudLayout>
 
 @code {
+    private static readonly System.Globalization.CultureInfo Cultura = new("es-DO");
     private bool _drawerOpen = true;
+    private DateTime _ahora = DateTime.Now;
+    private Timer? _reloj;
+
+    protected override void OnInitialized()
+    {
+        // El reloj del encabezado se refresca cada 30 s: suficiente para HH:mm.
+        _reloj = new Timer(_ => InvokeAsync(() => { _ahora = DateTime.Now; StateHasChanged(); }), null,
+                           TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private string RutaActual() => new Uri(Nav.Uri).AbsolutePath;
+
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    public void Dispose()
+    {
+        _reloj?.Dispose();
+    }
 }

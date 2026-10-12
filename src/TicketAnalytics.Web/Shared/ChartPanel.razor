@@ -1,13 +1,20 @@
-@* Contenedor estándar para gráficos: título con icono, cuerpo y manejo de vacío. *@
-<div class="panel" style="height:100%">
-    <div class="d-flex justify-space-between align-center mb-2">
-        <h2 class="panel-titulo mb-0">
-            @if (!string.IsNullOrEmpty(Icono))
+@* Contenedor estándar para gráficos: título con icono, subtítulo, acciones,
+   pista de interacción y manejo de vacío. *@
+<div class="@($"panel {(Clicable ? "ta-chart-click" : "")}")" style="height:100%">
+    <div class="panel-cab">
+        <div>
+            <h2 class="panel-titulo">
+                @if (!string.IsNullOrEmpty(Icono))
+                {
+                    <MudIcon Icon="@Icono" Size="Size.Small" Color="Color.Primary" />
+                }
+                @Titulo
+            </h2>
+            @if (!string.IsNullOrWhiteSpace(Subtitulo))
             {
-                <MudIcon Icon="@Icono" Size="Size.Small" Color="Color.Primary" />
+                <div class="panel-sub">@Subtitulo</div>
             }
-            @Titulo
-        </h2>
+        </div>
         @ExtraHeader
     </div>
     @if (Vacio)
@@ -18,18 +25,27 @@
     {
         @ChildContent
     }
-    @if (!string.IsNullOrEmpty(Nota))
+    @if (!string.IsNullOrEmpty(Nota) || (Clicable && !Vacio))
     {
-        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">@Nota</MudText>
+        <div class="panel-pie">
+            @if (Clicable && !Vacio)
+            {
+                <MudIcon Icon="@Icons.Material.Filled.TouchApp" Style="font-size:14px" />
+            }
+            @(Nota ?? "Haz clic en el gráfico para ver el detalle")
+        </div>
     }
 </div>
 
 @code {
     [Parameter] public string Titulo { get; set; } = "";
+    [Parameter] public string? Subtitulo { get; set; }
     [Parameter] public string? Icono { get; set; }
     [Parameter] public bool Vacio { get; set; }
     [Parameter] public string MensajeVacio { get; set; } = "Sin datos para el período.";
     [Parameter] public string? Nota { get; set; }
+    /// <summary>Marca el gráfico como interactivo: cursor de mano y pista al pie.</summary>
+    [Parameter] public bool Clicable { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
     [Parameter] public RenderFragment? ExtraHeader { get; set; }
 }

@@ -183,17 +183,71 @@ public class SeguimientoService : ISeguimientoService
 
     public async Task<PagedResult<SeguimientoDto>> BuscarAsync(TicketFiltro f, CancellationToken ct = default)
     {
-        var q = _db.TicketSeguimientos.AsNoTracking()
-            .Include(x => x.Actualizaciones).Include(x => x.Jiras)
-            .Include(x => x.ReportesProveedor).ThenInclude(r => r.Proveedor)
-            .Include(x => x.Evidencias)
-            .AsQueryable();
+        var q = FiltrarSeguimientos(f);
+        var total = await q.CountAsync(ct);
+
+        var pagina = f.Page < 1 ? 1 : f.Page;
+        var tam = f.PageSize is < 1 or > 200 ? 24 : f.PageSize;
+
+        // Las tarjetas solo necesitan CUÁNTAS actualizaciones, JIRA, reportes y evidencias hay:
+        // se cuentan en SQL en vez de traer las colecciones completas con Include.
+        var page = await q.OrderByDescending(s => s.ActualizadoEn)
+            .Skip((pagina - 1) * tam).Take(tam)
+            .Select(s => new
+            {
+                Seg = s,
+                Actualizaciones = s.Actualizaciones.Count,
+                Jiras = s.Jiras.Count,
+                Reportes = s.ReportesProveedor.Count,
+                Evidencias = s.Evidencias.Count
+            })
+            .ToListAsync(ct);
+
+        var items = page.Select(x =>
+        {
+            var dto = Map(x.Seg);
+            dto.CantidadActualizaciones = x.Actualizaciones;
+            dto.CantidadJiras = x.Jiras;
+            dto.CantidadReportesProveedor = x.Reportes;
+            dto.CantidadEvidencias = x.Evidencias;
+            return dto;
+        }).ToList();
+
+        return new PagedResult<SeguimientoDto> { Items = items, TotalCount = total, Page = pagina, PageSize = tam };
+    }
+
+    public async Task<ResumenSeguimientoDto> ResumenAsync(TicketFiltro f, CancellationToken ct = default)
+    {
+        var q = FiltrarSeguimientos(f);
+        var ahora = DateTime.Now;
+        var limite = DateTime.UtcNow.AddDays(-7);
+        // Conteos independientes: SQL Server no admite subconsultas (Any) dentro de un COUNT agrupado.
+        // Son consultas COUNT simples sobre la misma base filtrada; con DbContext no se paralelizan.
+        return new ResumenSeguimientoDto
+        {
+            Total = await q.CountAsync(ct),
+            ConJira = await q.CountAsync(s => s.Jiras.Any(), ct),
+            ConProveedor = await q.CountAsync(s => s.ReportesProveedor.Any(), ct),
+            RequierenAtencion = await q.CountAsync(s => s.ProximoSeguimiento != null && s.ProximoSeguimiento <= ahora, ct),
+            SinActualizar = await q.CountAsync(s => s.ActualizadoEn < limite, ct),
+            EnReporteVP = await q.CountAsync(s => s.VaReporteVP, ct)
+        };
+    }
+
+    /// <summary>Filtros comunes a la búsqueda paginada y al resumen (mismos criterios, mismos totales).</summary>
+    private IQueryable<TicketSeguimiento> FiltrarSeguimientos(TicketFiltro f)
+    {
+        var q = _db.TicketSeguimientos.AsNoTracking().AsQueryable();
 
         if (f.EtapaSeguimiento.HasValue) q = q.Where(s => (int)s.EtapaActual == f.EtapaSeguimiento.Value);
         if (f.EnEsperaProveedor == true) q = q.Where(s => s.EtapaActual == EtapaSeguimiento.EnEsperaProveedor);
         if (f.ConJira == true) q = q.Where(s => s.Jiras.Any());
         if (f.Reabierto == true) q = q.Where(s => s.EtapaActual == EtapaSeguimiento.Reabierto);
         if (f.CerradoConSeguimientoPendiente == true) q = q.Where(s => s.ContinuaBajoOC && s.Activo);
+        if (f.ReportadoVP == true) q = q.Where(s => s.VaReporteVP);
+        if (f.ReportadoProveedor.HasValue) q = q.Where(s => (int)s.ReportadoProveedor == f.ReportadoProveedor.Value);
+        if (!string.IsNullOrWhiteSpace(f.AsignatarioNombre))
+            q = q.Where(s => s.TecnicoResponsable != null && s.TecnicoResponsable.Contains(f.AsignatarioNombre));
         // Bandeja: activas vs finalizadas
         if (f.SoloActivos.HasValue) q = q.Where(s => s.Activo == f.SoloActivos.Value);
         if (f.SinActualizacionReciente == true)
@@ -202,15 +256,7 @@ public class SeguimientoService : ISeguimientoService
             q = q.Where(s => s.ActualizadoEn < limite);
         }
         if (!string.IsNullOrWhiteSpace(f.Texto)) q = q.Where(s => s.RefNum.Contains(f.Texto));
-
-        var total = await q.CountAsync(ct);
-        var page = await q.OrderByDescending(s => s.ActualizadoEn)
-            .Skip((f.Page - 1) * f.PageSize).Take(f.PageSize).ToListAsync(ct);
-
-        return new PagedResult<SeguimientoDto>
-        {
-            Items = page.Select(Map).ToList(), TotalCount = total, Page = f.Page, PageSize = f.PageSize
-        };
+        return q;
     }
 
     private static SeguimientoDto Map(TicketSeguimiento s) => new()

@@ -2,31 +2,38 @@
 @inject TicketAnalyticsApi Api
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
+@inject FileDownloadService Descargas
 
 <PageTitle>Tickets · TicketAnalytics</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-4">
-    <div>
-        <h1 class="seccion-titulo">Tickets</h1>
-        <p class="seccion-bajada">Solicitudes e incidentes con su orden de cambio asociada</p>
-    </div>
-    <MudButton StartIcon="@Icons.Material.Filled.Download" Variant="Variant.Outlined" Color="Color.Primary"
-               OnClick="Exportar" Disabled="@(_resultado is null || !_resultado.Items.Any())">
-        Exportar
-    </MudButton>
-</div>
+<PageHeader Titulo="Tickets" Icono="@Icons.Material.Filled.ConfirmationNumber"
+            Bajada="Solicitudes e incidentes con su orden de cambio asociada">
+    <Acciones>
+        <MudButton StartIcon="@(_exportando ? null : Icons.Material.Filled.TableView)" Variant="Variant.Filled" Color="Color.Success"
+                   OnClick="Exportar" Disabled="@(_exportando || _resultado is null || _resultado.TotalCount == 0)">
+            @if (_exportando)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Generando…</span>
+            }
+            else
+            {
+                <span>Exportar a Excel</span>
+            }
+        </MudButton>
+    </Acciones>
+</PageHeader>
 
 @* Vistas rápidas: al entrar, la pantalla se enfoca en lo que requiere atención *@
-<div class="d-flex gap-2 mb-3 flex-wrap align-center">
-    <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Vista:</MudText>
+<div class="ta-pills mb-3">
+    <span class="lbl">Vista:</span>
     @foreach (var v in Vistas)
     {
-        <MudChip T="string" Size="Size.Small" OnClick="@(() => CambiarVista(v.Clave))"
-                 Style="@(_vista == v.Clave
-                          ? "background:var(--bsc-azul);color:#fff;cursor:pointer;font-weight:600"
-                          : "background:transparent;color:var(--bsc-azul);border:1px solid var(--bsc-azul);cursor:pointer")">
-            @v.Texto
-        </MudChip>
+        <button type="button" class="@($"ta-pill {(_vista == v.Clave ? "activa" : "")}")" style="@($"--pill:{v.Color}")"
+                @onclick="@(() => CambiarVista(v.Clave))">
+            <MudIcon Icon="@v.Icono" Style="font-size:16px" /> @v.Texto
+        </button>
     }
 </div>
 
@@ -37,88 +44,138 @@
 
 @if (_error is not null)
 {
-    <MudAlert Severity="Severity.Error" Class="mb-3" ShowCloseIcon="true" CloseIconClicked="@(() => _error = null)">
-        <b>No se pudieron cargar los tickets.</b> @_error
-        <div class="mt-1" style="font-size:.8rem">
-            Si el problema persiste, revisa que existan categorías en alcance: <code>GET /api/admin/categorias</code>
-        </div>
-    </MudAlert>
+    <ErrorState Mensaje="No se pudieron cargar los tickets." Detalle="@_error"
+                Secundario="Si el problema persiste, revisa que existan categorías en alcance (GET /api/admin/categorias)."
+                OnReintentar="Recargar" />
 }
 
 <div class="panel pa-0">
-    <div class="d-flex justify-space-between align-center pa-4 pb-2">
-        <MudText Typo="Typo.body2" Style="color:var(--texto-secundario)">
+    <div class="d-flex justify-space-between align-center flex-wrap gap-2 pa-4 pb-2">
+        <span class="ta-resumen-pag">
             @if (_resultado is not null)
             {
-                <text><b>@_resultado.TotalCount</b> tickets</text>
+                @if (_resultado.TotalCount == 0)
+                {
+                    <text>Sin resultados para esta vista</text>
+                }
+                else
+                {
+                    var desde = (_resultado.Page - 1) * _resultado.PageSize + 1;
+                    var hasta = Math.Min(_resultado.Page * _resultado.PageSize, _resultado.TotalCount);
+                    @if (Buscando)
+                    {
+                        <text><MudIcon Icon="@Icons.Material.Filled.Search" Style="font-size:15px;vertical-align:middle" /> <b>@_resultado.TotalCount</b> resultados para "@_filtro.Texto" en <b>todos</b> los tickets · mostrando @desde–@hasta</text>
+                    }
+                    else
+                    {
+                        <text><MudIcon Icon="@Icons.Material.Filled.Schedule" Style="font-size:15px;vertical-align:middle" /> Más recientes primero · mostrando <b>@desde–@hasta</b> de <b>@_resultado.TotalCount</b> tickets · @TextoVista</text>
+                    }
+                }
             }
-        </MudText>
-        @if (_resultado is not null && _resultado.Items.Any(i => i.ReqCerradoConCambioPendiente))
-        {
-            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Icon="@Icons.Material.Filled.Warning" Variant="Variant.Text">
-                @_resultado.Items.Count(i => i.ReqCerradoConCambioPendiente) cerrados con OC pendiente
-            </MudChip>
-        }
+        </span>
+        <div class="d-flex gap-2 flex-wrap">
+            @if (_resultado is not null && _resultado.Items.Any(i => i.ReqCerradoConCambioPendiente))
+            {
+                <span class="ta-tag warn"><MudIcon Icon="@Icons.Material.Filled.LinkOff" Style="font-size:14px" /> @_resultado.Items.Count(i => i.ReqCerradoConCambioPendiente) cerrados con OC pendiente en esta página</span>
+            }
+            @if (_resultado is not null && _resultado.Items.Any(i => i.EstadoVencimiento is "vencido" or "vence_hoy"))
+            {
+                <span class="ta-tag err"><MudIcon Icon="@Icons.Material.Filled.Error" Style="font-size:14px" /> @_resultado.Items.Count(i => i.EstadoVencimiento is "vencido" or "vence_hoy") vencidos o vencen hoy</span>
+            }
+        </div>
     </div>
 
-    <MudTable ServerData="CargarServer" @ref="_tabla" Dense="true" Hover="true" Striped="false"
-              Breakpoint="Breakpoint.Md" Elevation="0" RowClass="cursor-pointer"
+    <MudTable ServerData="CargarServer" @ref="_tabla" Dense="true" Hover="true" Striped="false" RowsPerPage="15"
+              Breakpoint="Breakpoint.Md" Elevation="0" Class="ta-tabla-click"
               OnRowClick="AbrirDetalle" T="TicketEnriquecidoDto" RowClassFunc="@FilaClass">
         <HeaderContent>
             <MudTh>Tipo</MudTh>
             <MudTh>No. Ticket</MudTh>
+            <MudTh>Resumen</MudTh>
             <MudTh>Categoría</MudTh>
             <MudTh>Estado</MudTh>
             <MudTh>Asignatario</MudTh>
             <MudTh>Apertura</MudTh>
+            <MudTh>Vencimiento</MudTh>
             <MudTh>SLA</MudTh>
             <MudTh>OC</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Tipo">
-                <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
-                         Color="@(context.TipoCaso == "Incidente" ? Color.Error : Color.Primary)">@context.TipoCaso</MudChip>
+                <span class="@($"ta-tag {(context.TipoCaso == "Incidente" ? "err" : "info")}")">@context.TipoCaso</span>
             </MudTd>
             <MudTd DataLabel="No. Ticket"><b>@context.NoTicket</b></MudTd>
-            <MudTd DataLabel="Categoría">@CortarCategoria(context.Categoria)</MudTd>
+            <MudTd DataLabel="Resumen" Style="max-width:220px">
+                <MudText Typo="Typo.body2" Style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="@context.Descripcion">
+                    @Formato.Corto(context.Descripcion, 60)
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Categoría"><span title="@context.Categoria">@Formato.Area(context.Categoria)</span></MudTd>
             <MudTd DataLabel="Estado">@context.Estado</MudTd>
-            <MudTd DataLabel="Asignatario">@context.Asignatario</MudTd>
+            <MudTd DataLabel="Asignatario">
+                @if (string.IsNullOrWhiteSpace(context.Asignatario))
+                {
+                    <span class="ta-tag warn">Sin asignar</span>
+                }
+                else
+                {
+                    <div class="d-flex align-center gap-2">
+                        <span class="ta-avatar sm" style="@($"background:{Formato.ColorAvatar(context.Asignatario)}")">@Formato.Iniciales(context.Asignatario)</span>
+                        <span>@Formato.NombreCorto(context.Asignatario)</span>
+                    </div>
+                }
+            </MudTd>
             <MudTd DataLabel="Apertura">@context.FechaApertura?.ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Vencimiento">
+                @if (ReglaAlertas.VenceEnLaProximaHora(context.FechaVencimiento) && context.EstadoVencimiento != "cerrado")
+                {
+                    <span class="ta-tag urgente"><MudIcon Icon="@Icons.Material.Filled.AlarmOn" Style="font-size:14px" /> vence en @((int)Math.Ceiling((context.FechaVencimiento!.Value - DateTime.Now).TotalMinutes)) min</span>
+                }
+                else if (context.FechaVencimiento.HasValue && context.EstadoVencimiento is not ("cerrado" or "sin_fecha"))
+                {
+                    <EstadoVencimientoChip Estado="@context.EstadoVencimiento" DiasRestantes="@context.DiasParaVencer" />
+                }
+                else
+                {
+                    <span class="ta-tenue">@(context.FechaVencimiento?.ToString("dd/MM/yyyy") ?? "—")</span>
+                }
+            </MudTd>
             <MudTd DataLabel="SLA">
-                <MudChip T="string" Size="Size.Small"
-                         Color="@(context.ResueltoDentroSLA == "SI" ? Color.Success : context.ResueltoDentroSLA == "NO" ? Color.Error : Color.Default)"
-                         Variant="Variant.Filled">@context.ResueltoDentroSLA</MudChip>
+                <span class="@($"ta-tag {(context.ResueltoDentroSLA == "SI" ? "ok" : context.ResueltoDentroSLA == "NO" ? "err" : "")}")">
+                    @(context.ResueltoDentroSLA switch { "SI" => "Dentro", "NO" => "Fuera", "EN CURSO" => "En curso", _ => context.ResueltoDentroSLA })
+                </span>
             </MudTd>
             <MudTd DataLabel="OC">
                 @if (context.TieneOrdenCambio)
                 {
                     <MudTooltip Text="@($"OC {context.NoOC} · {context.EstadoOC}")">
-                        <MudChip T="string" Size="Size.Small" Icon="@Icons.Material.Filled.ChangeCircle"
-                                 Color="@(context.ReqCerradoConCambioPendiente ? Color.Warning : Color.Secondary)"
-                                 Variant="Variant.Text">@context.NoOC</MudChip>
+                        <span class="@($"ta-tag {(context.ReqCerradoConCambioPendiente ? "warn" : "ok")}")">
+                            <MudIcon Icon="@Icons.Material.Filled.ChangeCircle" Style="font-size:14px" /> @context.NoOC
+                        </span>
                     </MudTooltip>
                 }
-                else { <span style="color:var(--texto-tenue)">—</span> }
+                else { <span class="ta-tenue">—</span> }
             </MudTd>
         </RowTemplate>
         <NoRecordsContent>
-            <div class="vacio">
-                <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" Class="vacio-icono" />
-                <MudText Typo="Typo.body1">No hay tickets para estos filtros.</MudText>
-                <MudText Typo="Typo.caption" Class="mt-1">Amplía el rango de fechas o quita algún criterio.</MudText>
-            </div>
+            <EmptyState Icono="@Icons.Material.Filled.SearchOff" Mensaje="No hay tickets para estos filtros."
+                        Detalle="Amplía el rango de fechas, cambia de vista o quita algún criterio." />
         </NoRecordsContent>
-        <LoadingContent><MudText Class="pa-4">Cargando tickets…</MudText></LoadingContent>
-        <PagerContent><MudTablePager PageSizeOptions="new[]{25,50,100}" /></PagerContent>
+        <LoadingContent>
+            <div class="pa-4">
+                @for (var i = 0; i < 6; i++) { <MudSkeleton Height="34px" Animation="Animation.Wave" Class="mb-1" /> }
+            </div>
+        </LoadingContent>
+        <PagerContent><MudTablePager PageSizeOptions="new[]{15,25,50,100}" RowsPerPageString="Filas por página" InfoFormat="{first_item}–{last_item} de {all_items}" /></PagerContent>
     </MudTable>
 </div>
 
 </MudTabPanel>
 
-<MudTabPanel Text="Pendientes de proveedor" Icon="@Icons.Material.Filled.Business">
+<MudTabPanel Text="Pendientes de proveedor" Icon="@Icons.Material.Filled.Business" BadgeData="@(_pendientes.Count > 0 ? _pendientes.Count : null)" BadgeColor="Color.Warning">
     <MudText Typo="Typo.body2" Class="mb-3" Style="color:var(--texto-secundario)">
         Casos cuyo reporte al proveedor está en <b>No</b> o <b>Pendiente</b>: todavía requieren
-        escalamiento o confirmación de que se resolvieron internamente.
+        escalamiento o confirmación de que se resolvieron internamente. Clic en una fila para gestionarlo.
     </MudText>
 
     @if (_cargandoPendientes)
@@ -127,37 +184,37 @@
     }
     else if (!_pendientes.Any())
     {
-        <EmptyState Icono="@Icons.Material.Filled.CheckCircle"
+        <EmptyState Icono="@Icons.Material.Filled.CheckCircle" ColorIcono="var(--op-cumplido)"
                     Mensaje="No hay casos pendientes de escalar a proveedor." />
     }
     else
     {
-        <MudTable Items="_pendientes" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky"
-                  Breakpoint="Breakpoint.Sm">
-            <HeaderContent>
-                <MudTh>Caso</MudTh>
-                <MudTh>Tipo</MudTh>
-                <MudTh>Categoría</MudTh>
-                <MudTh>Responsable</MudTh>
-                <MudTh>Estado proveedor</MudTh>
-                <MudTh>Próximos pasos</MudTh>
-                <MudTh>Actualizado</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Caso"><b>@context.RefNum</b></MudTd>
-                <MudTd DataLabel="Tipo">@(context.TipoOrigen == "chg" ? "Orden de Cambio" : "Ticket")</MudTd>
-                <MudTd DataLabel="Categoría">@(context.Categoria ?? "—")</MudTd>
-                <MudTd DataLabel="Responsable">@(context.TecnicoResponsable ?? "—")</MudTd>
-                <MudTd DataLabel="Estado proveedor">
-                    <MudChip T="string" Size="Size.Small"
-                             Style="@($"background:{(context.Estado == 2 ? "#ED6C02" : "#667085")};color:#fff")">
-                        @context.EstadoTexto
-                    </MudChip>
-                </MudTd>
-                <MudTd DataLabel="Próximos pasos">@(context.ProximosPasos ?? "—")</MudTd>
-                <MudTd DataLabel="Actualizado">@context.ActualizadoEn.ToString("dd/MM/yyyy")</MudTd>
-            </RowTemplate>
-        </MudTable>
+        <div class="panel pa-0">
+            <MudTable Items="_pendientes" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky ta-tabla-click"
+                      Breakpoint="Breakpoint.Sm" T="PendienteEscalarDto"
+                      OnRowClick="@((TableRowClickEventArgs<PendienteEscalarDto> a) => GestionarPendiente(a.Item!))">
+                <HeaderContent>
+                    <MudTh>Caso</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>Categoría</MudTh>
+                    <MudTh>Responsable</MudTh>
+                    <MudTh>Estado proveedor</MudTh>
+                    <MudTh>Próximos pasos</MudTh>
+                    <MudTh>Actualizado</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Caso"><b>@context.RefNum</b></MudTd>
+                    <MudTd DataLabel="Tipo">@(context.TipoOrigen == "chg" ? "Orden de cambio" : "Ticket")</MudTd>
+                    <MudTd DataLabel="Categoría">@(context.Categoria ?? "—")</MudTd>
+                    <MudTd DataLabel="Responsable">@(context.TecnicoResponsable ?? "—")</MudTd>
+                    <MudTd DataLabel="Estado proveedor">
+                        <span class="@($"ta-tag {(context.Estado == 2 ? "warn" : "")}")">@context.EstadoTexto</span>
+                    </MudTd>
+                    <MudTd DataLabel="Próximos pasos">@Formato.Corto(context.ProximosPasos, 80)</MudTd>
+                    <MudTd DataLabel="Actualizado">@Formato.Hace(context.ActualizadoEn)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </div>
     }
 </MudTabPanel>
 
@@ -171,20 +228,66 @@
     // Vista por defecto: lo que requiere atención (abiertos / pendientes de gestión)
     private TicketFiltro _filtro = new() { SoloAbiertos = true };
     private string _vista = "abiertos";
+    private bool _exportando;
 
-    public record Vista(string Clave, string Texto);
+    public record Vista(string Clave, string Texto, string Icono, string Color);
     public static readonly Vista[] Vistas =
     {
-        new("abiertos", "Abiertos / pendientes"),
-        new("proveedor", "Pendientes de proveedor"),
-        new("vencidos", "SLA vencido"),
-        new("todos", "Todos")
+        new("abiertos",    "Abiertos / pendientes",      Icons.Material.Filled.FolderOpen,  "#15528E"),
+        new("vencidos",    "SLA vencido",                Icons.Material.Filled.Error,       "#C62828"),
+        new("proveedor",   "Pendientes de proveedor",    Icons.Material.Filled.Business,    "#ED6C02"),
+        new("ocpendiente", "Cerrado con OC pendiente",   Icons.Material.Filled.LinkOff,     "#7B1FA2"),
+        new("todos",       "Todos",                      Icons.Material.Filled.AllInbox,    "#455A64")
     };
+
+    /// <summary>?ticket=REF abre el detalle; funciona también si ya estamos en /tickets (p. ej. desde una alerta).</summary>
+    [SupplyParameterFromQuery(Name = "ticket")] public string? TicketQuery { get; set; }
+    private string? _ultimoTicketQuery;
+
+    /// <summary>Con texto de búsqueda se busca en TODOS los tickets: la vista rápida no recorta resultados.</summary>
+    private bool Buscando => !string.IsNullOrWhiteSpace(_filtro.Texto);
+
+    private string TextoVista => Vistas.FirstOrDefault(v => v.Clave == _vista)?.Texto.ToLowerInvariant() ?? "";
 
     private List<PendienteEscalarDto> _pendientes = new();
     private bool _cargandoPendientes = true;
 
-    protected override async Task OnInitializedAsync() => await CargarPendientes();
+    private MudTable<TicketEnriquecidoDto> _tabla = default!;
+    private PagedResult<TicketEnriquecidoDto>? _resultado;
+    private string? _error;
+    private string? _ticketAAbrir;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Drill-down desde otras pantallas: /tickets?vista=vencidos&asignatario=…&sistema=…&ticket=…
+        var q = UrlQuery.Leer(Nav);
+        if (q.TryGetValue("vista", out var v) && Vistas.Any(x => x.Clave == v)) AplicarVista(v);
+        if (q.TryGetValue("asignatario", out var a)) _filtro.AsignatarioNombre = a;
+        if (q.TryGetValue("sla", out var sla)) _filtro.EstadoSla = sla;
+        if (q.TryGetValue("sistema", out var s) && int.TryParse(s, out var si)) _filtro.Sistema = si;
+        if (q.TryGetValue("tiposolucion", out var t) && int.TryParse(t, out var ti)) _filtro.TipoSolucion = ti;
+        if (q.TryGetValue("texto", out var tx)) _filtro.Texto = tx;
+
+        await CargarPendientes();
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!string.IsNullOrWhiteSpace(TicketQuery) && TicketQuery != _ultimoTicketQuery)
+        {
+            _ultimoTicketQuery = TicketQuery;
+            _ticketAAbrir = TicketQuery;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_ticketAAbrir is null) return;
+        var refNum = _ticketAAbrir;
+        _ticketAAbrir = null;
+        var t = await Api.ObtenerTicketAsync(refNum);
+        if (t is not null) await MostrarDetalle(t);
+    }
 
     private async Task CargarPendientes()
     {
@@ -194,26 +297,29 @@
         finally { _cargandoPendientes = false; }
     }
 
-    private async Task CambiarVista(string clave)
+    private void AplicarVista(string clave)
     {
         _vista = clave;
-        // Limpiamos los atajos y aplicamos solo el de la vista elegida
         _filtro.SoloAbiertos = null;
         _filtro.PendienteEscalarProveedor = null;
         _filtro.EstadoSla = null;
+        _filtro.SoloReqCerradoCambioPendiente = null;
 
         switch (clave)
         {
             case "abiertos": _filtro.SoloAbiertos = true; break;
             case "proveedor": _filtro.PendienteEscalarProveedor = true; break;
             case "vencidos": _filtro.EstadoSla = "NO"; break;
-            case "todos": break;
+            case "ocpendiente": _filtro.SoloReqCerradoCambioPendiente = true; break;
         }
+    }
+
+    private async Task CambiarVista(string clave)
+    {
+        AplicarVista(clave);
+        _filtro.Page = 1;
         await Recargar();
     }
-    private MudTable<TicketEnriquecidoDto> _tabla = default!;
-    private PagedResult<TicketEnriquecidoDto>? _resultado;
-    private string? _error;
 
     private async Task<TableData<TicketEnriquecidoDto>> CargarServer(TableState state, CancellationToken ct)
     {
@@ -222,53 +328,77 @@
             _error = null;
             _filtro.Page = state.Page + 1;
             _filtro.PageSize = state.PageSize;
-            _filtro.OrderBy = "fechaapertura";
+            _filtro.OrderBy = "fechaapertura";   // siempre los más recientes primero
             _filtro.OrderDesc = true;
-            _resultado = await Api.BuscarTicketsAsync(_filtro);
+            _resultado = await Api.BuscarTicketsAsync(FiltroEfectivo());
+            // La tabla se redibuja sola, pero el resumen y el botón Exportar viven en la página.
+            _ = InvokeAsync(StateHasChanged);
             return new TableData<TicketEnriquecidoDto> { Items = _resultado.Items, TotalItems = _resultado.TotalCount };
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            _error = ex is ApiException api ? api.MensajeUsuario : ex.Message;
+            _resultado = null;
             StateHasChanged();
             return new TableData<TicketEnriquecidoDto> { Items = new List<TicketEnriquecidoDto>(), TotalItems = 0 };
         }
     }
 
-    private async Task Recargar() => await _tabla.ReloadServerData();
+    private async Task Recargar() { if (_tabla is not null) await _tabla.ReloadServerData(); }
+
+    /// <summary>
+    /// Filtro que se envía al backend. Si hay texto de búsqueda, se quitan las restricciones de la
+    /// vista rápida (abiertos, vencidos, proveedor, OC pendiente) para que el ticket siempre aparezca;
+    /// el resto de filtros que el usuario eligió a mano se respetan.
+    /// </summary>
+    private TicketFiltro FiltroEfectivo()
+    {
+        var f = System.Text.Json.JsonSerializer.Deserialize<TicketFiltro>(System.Text.Json.JsonSerializer.Serialize(_filtro))!;
+        if (Buscando)
+        {
+            f.SoloAbiertos = null;
+            f.PendienteEscalarProveedor = null;
+            f.SoloReqCerradoCambioPendiente = null;
+            if (_vista == "vencidos") f.EstadoSla = null;
+        }
+        return f;
+    }
 
     private string FilaClass(TicketEnriquecidoDto t, int _) => t.ReqCerradoConCambioPendiente ? "fila-critica" : "";
 
-    private async Task AbrirDetalle(TableRowClickEventArgs<TicketEnriquecidoDto> args)
+    private Task AbrirDetalle(TableRowClickEventArgs<TicketEnriquecidoDto> args) => MostrarDetalle(args.Item!);
+
+    private async Task MostrarDetalle(TicketEnriquecidoDto t)
     {
-        var p = new DialogParameters { ["Ticket"] = args.Item };
-        await DialogService.ShowAsync<TicketDetalleDialog>($"Ticket {args.Item.NoTicket}", p,
-            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var d = await DialogService.ShowAsync<TicketDetalleDialog>($"Ticket {t.NoTicket}",
+            new DialogParameters { ["Ticket"] = t },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var r = await d.Result;
+        if (r is { Canceled: false }) { await CargarPendientes(); await Recargar(); }
+    }
+
+    private async Task GestionarPendiente(PendienteEscalarDto p)
+    {
+        var d = await DialogService.ShowAsync<ReporteGestionDialog>($"Gestión · {p.RefNum}",
+            new DialogParameters { ["RefNum"] = p.RefNum, ["EsOrdenCambio"] = p.TipoOrigen == "chg" },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var r = await d.Result;
+        if (r is { Canceled: false }) await CargarPendientes();
     }
 
     private async Task Exportar()
     {
+        if (_exportando) return;
+        _exportando = true;
         try
         {
-            var todo = new TicketFiltro
-            {
-                FechaDesde = _filtro.FechaDesde, FechaHasta = _filtro.FechaHasta,
-                TipoCaso = _filtro.TipoCaso, EstadoSla = _filtro.EstadoSla, Texto = _filtro.Texto,
-                ComplejidadOC = _filtro.ComplejidadOC, ConOrdenCambio = _filtro.ConOrdenCambio,
-                SoloReqCerradoCambioPendiente = _filtro.SoloReqCerradoCambioPendiente,
-                Page = 1, PageSize = 500, OrderBy = "fechaapertura", OrderDesc = true
-            };
-            var data = await Api.BuscarTicketsAsync(todo);
-            await CsvExport.DescargarTicketsAsync(data.Items);
-            Snackbar.Add($"Exportados {data.Items.Count} tickets", Severity.Success);
+            // El backend exporta TODO lo que cumple el filtro actual (no solo la página visible).
+            var bytes = await Api.TicketsExcelBytesAsync(FiltroEfectivo());
+            await Descargas.DescargarExcelAsync($"Tickets_{DateTime.Now:yyyyMMdd_HHmm}.xlsx", bytes);
+            Snackbar.Add($"Excel generado con {_resultado?.TotalCount ?? 0} tickets", Severity.Success);
         }
-        catch (Exception ex) { Snackbar.Add($"No se pudo exportar: {ex.Message}", Severity.Error); }
-    }
-
-    private static string CortarCategoria(string? c)
-    {
-        if (string.IsNullOrEmpty(c)) return "";
-        var p = c.Split('.');
-        return p.Length > 0 ? p[^1] : c;
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception) { Snackbar.Add("No pudimos generar el Excel. Intenta de nuevo.", Severity.Error); }
+        finally { _exportando = false; }
     }
 }

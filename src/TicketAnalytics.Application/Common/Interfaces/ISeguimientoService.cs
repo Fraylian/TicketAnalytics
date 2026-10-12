@@ -17,4 +17,6 @@ public interface ISeguimientoService
     Task<ActualizacionDto> AgregarActualizacionAsync(string refNum, AgregarActualizacionRequest req, CancellationToken ct = default);
     Task<IReadOnlyList<ActualizacionDto>> HistorialAsync(string refNum, CancellationToken ct = default);
     Task<PagedResult<SeguimientoDto>> BuscarAsync(TicketFiltro f, CancellationToken ct = default);
+    /// <summary>Conteos de la bandeja con los mismos filtros de la búsqueda (no solo la página visible).</summary>
+    Task<ResumenSeguimientoDto> ResumenAsync(TicketFiltro f, CancellationToken ct = default);
 }

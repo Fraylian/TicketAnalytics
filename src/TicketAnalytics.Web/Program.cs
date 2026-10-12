@@ -18,10 +18,8 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(apiBase)
 builder.Services.AddScoped<TicketAnalyticsApi>();
 builder.Services.AddScoped<FileDownloadService>();
 builder.Services.AddScoped<CatalogoCache>();
+builder.Services.AddScoped<UiService>();
 
 var host = builder.Build();
-
-// Inicializar el helper de exportacion CSV con el runtime JS
-CsvExport.Init(host.Services.GetRequiredService<IJSRuntime>());
 
 await host.RunAsync();

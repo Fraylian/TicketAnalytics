@@ -1,61 +1,95 @@
 @* Bandeja del equipo: tickets abiertos por analista, con colores y alertas de vencimiento. *@
 @inject TicketAnalyticsApi Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 @if (_cargando)
 {
     <MudGrid Spacing="3">
-        @for (var i = 0; i < 4; i++) { <MudItem xs="6" md="3"><MudSkeleton Height="90px" /></MudItem> }
-        <MudItem xs="12"><MudSkeleton Height="300px" /></MudItem>
+        @for (var i = 0; i < 4; i++) { <MudItem xs="6" md="3"><KpiCard Cargando="true" /></MudItem> }
+        <MudItem xs="12"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="260px" Animation="Animation.Wave" /></MudItem>
     </MudGrid>
+}
+else if (_error is not null)
+{
+    <ErrorState Mensaje="No pudimos cargar la bandeja del equipo." Detalle="@_error" OnReintentar="Recargar" />
 }
 else
 {
-    <!-- Semáforo global -->
-    <MudGrid Spacing="3" Class="mb-3">
-        <MudItem xs="6" md="3"><KpiCard Titulo="Vencidos" Valor="@_b.Vencidos.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido" Nota="requieren atención ya" /></MudItem>
-        <MudItem xs="6" md="3"><KpiCard Titulo="Vencen hoy" Valor="@_b.VencenHoy.ToString()" Icono="@Icons.Material.Filled.Today" Acento="vencido" /></MudItem>
-        <MudItem xs="6" md="3"><KpiCard Titulo="Vencen pronto" Valor="@_b.VencenPronto.ToString()" Icono="@Icons.Material.Filled.HourglassBottom" Acento="riesgo" Nota="en 2 días o menos" /></MudItem>
-        <MudItem xs="6" md="3"><KpiCard Titulo="Abiertos" Valor="@_b.TotalAbiertos.ToString()" Icono="@Icons.Material.Filled.Inbox" Acento="azul" /></MudItem>
+    @if (ProximaHora.Any())
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-3" Icon="@Icons.Material.Filled.AlarmOn">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                <span>
+                    <b>@(ProximaHora.Count == 1 ? "1 ticket vence" : $"{ProximaHora.Count} tickets vencen") en la próxima hora:</b>
+                    @string.Join(" · ", ProximaHora.Take(5).Select(t => $"{t.NoTicket} ({t.TextoRestante.Replace("vence en ", "")})"))
+                </span>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Style="color:#fff;border-color:rgba(255,255,255,.7)"
+                           OnClick="@(() => FiltrarEstado(ProximaHoraClave))">@(_estado == ProximaHoraClave ? "Ver todos" : "Ver solo esos")</MudButton>
+            </div>
+        </MudAlert>
+    }
+
+    <!-- Semáforo global: cada tarjeta filtra la bandeja -->
+    <MudGrid Spacing="3" Class="mb-3 ta-stagger">
+        <MudItem xs="12" sm="6" lg="4"><KpiCard Titulo="Vencen en la próxima hora" Valor="@ProximaHora.Count.ToString()" Icono="@Icons.Material.Filled.AlarmOn" Acento="vencido" Nota="@($"aviso con {ReglaAlertas.MinutosAntelacion} min de antelación")" Activo="@(_estado == ProximaHoraClave)" TextoAccion="Filtrar" OnClick="@(() => FiltrarEstado(ProximaHoraClave))" /></MudItem>
+        <MudItem xs="6" sm="3" lg="2"><KpiCard Titulo="Vencidos" Valor="@_b.Vencidos.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido" Nota="requieren atención ya" Activo="@(_estado == "vencido")" TextoAccion="Filtrar" OnClick="@(() => FiltrarEstado("vencido"))" /></MudItem>
+        <MudItem xs="6" sm="3" lg="2"><KpiCard Titulo="Vencen hoy" Valor="@_b.VencenHoy.ToString()" Icono="@Icons.Material.Filled.Today" Acento="vencido" Activo="@(_estado == "vence_hoy")" TextoAccion="Filtrar" OnClick="@(() => FiltrarEstado("vence_hoy"))" /></MudItem>
+        <MudItem xs="6" sm="6" lg="2"><KpiCard Titulo="Vencen pronto" Valor="@_b.VencenPronto.ToString()" Icono="@Icons.Material.Filled.HourglassBottom" Acento="riesgo" Nota="en 2 días o menos" Activo="@(_estado == "vence_pronto")" TextoAccion="Filtrar" OnClick="@(() => FiltrarEstado("vence_pronto"))" /></MudItem>
+        <MudItem xs="6" sm="6" lg="2"><KpiCard Titulo="Abiertos" Valor="@_b.TotalAbiertos.ToString()" Icono="@Icons.Material.Filled.Inbox" Acento="azul" Nota="en el grupo" /></MudItem>
     </MudGrid>
 
     @if (!_b.Analistas.Any())
     {
-        <EmptyState Icono="@Icons.Material.Filled.CheckCircle" Mensaje="No hay tickets abiertos por vencer en el grupo." />
+        <EmptyState Icono="@Icons.Material.Filled.CheckCircle" ColorIcono="var(--op-cumplido)" Mensaje="No hay tickets abiertos por vencer en el grupo." />
     }
     else
     {
+        <div class="ta-stagger">
         @foreach (var a in _b.Analistas)
         {
+            var tickets = TicketsVisibles(a);
+            if (_estado is not null && !tickets.Any()) continue;
             <MudPaper Class="pa-3 mb-3" Elevation="0" Style="@BordeAnalista(a)">
                 <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
-                    <div class="d-flex align-center gap-2">
-                        <MudAvatar Color="Color.Primary" Size="Size.Small">@Iniciales(a.Analista)</MudAvatar>
+                    <div class="d-flex align-center gap-3">
+                        <span class="ta-avatar" style="@($"background:{Formato.ColorAvatar(a.Analista)}")">@Formato.Iniciales(a.Analista)</span>
                         <div>
                             <MudText Typo="Typo.subtitle1"><b>@a.Analista</b></MudText>
-                            <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">@a.TotalAbiertos abiertos</MudText>
+                            <MudText Typo="Typo.caption" Class="ta-muted">@a.TotalAbiertos abiertos</MudText>
                         </div>
                     </div>
                     <div class="d-flex gap-1 flex-wrap">
-                        @if (a.Vencidos > 0) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-vencido);color:#fff">@a.Vencidos vencidos</MudChip> }
-                        @if (a.VencenHoy > 0) { <MudChip T="string" Size="Size.Small" Style="background:#C62828;color:#fff">@a.VencenHoy hoy</MudChip> }
-                        @if (a.VencenPronto > 0) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-riesgo);color:#fff">@a.VencenPronto pronto</MudChip> }
-                        @if (a.EnCurso > 0) { <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">@a.EnCurso en curso</MudChip> }
+                        @{ var urgentes = a.Tickets.Count(t => ReglaAlertas.VenceEnLaProximaHora(t.FechaVencimiento)); }
+                        @if (urgentes > 0) { <span class="ta-tag urgente"><MudIcon Icon="@Icons.Material.Filled.AlarmOn" Style="font-size:14px" /> @urgentes en la próxima hora</span> }
+                        @if (a.Vencidos > 0) { <span class="ta-tag err">@a.Vencidos vencidos</span> }
+                        @if (a.VencenHoy > 0) { <span class="ta-tag err">@a.VencenHoy vencen hoy</span> }
+                        @if (a.VencenPronto > 0) { <span class="ta-tag warn">@a.VencenPronto pronto</span> }
+                        @if (a.EnCurso > 0) { <span class="ta-tag info">@a.EnCurso en curso</span> }
                     </div>
                 </div>
 
                 <MudExpansionPanels Elevation="0" Dense="true">
-                    <MudExpansionPanel Text="@($"Ver {a.Tickets.Count} tickets")">
-                        <MudTable Items="a.Tickets" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                    <MudExpansionPanel Text="@($"Ver {tickets.Count} tickets{(_estado is null ? "" : " de este filtro")}")" Expanded="@(_estado is not null || urgentes > 0)">
+                        <MudTable Items="tickets" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm" Class="ta-tabla-click"
+                                  T="TicketBandejaDto" OnRowClick="@((TableRowClickEventArgs<TicketBandejaDto> e) => AbrirTicket(e.Item!.NoTicket))">
                             <HeaderContent>
-                                <MudTh>Ticket</MudTh><MudTh>Título</MudTh><MudTh>Apertura</MudTh><MudTh>Vence</MudTh><MudTh>Estado</MudTh>
+                                <MudTh>Ticket</MudTh><MudTh>Título</MudTh><MudTh>Apertura</MudTh><MudTh>Vence</MudTh><MudTh>Situación</MudTh>
                             </HeaderContent>
                             <RowTemplate>
                                 <MudTd DataLabel="Ticket"><b>@context.NoTicket</b></MudTd>
-                                <MudTd DataLabel="Título" Style="max-width:280px"><MudText Typo="Typo.body2" Style="white-space:normal">@Corto(context.Titulo)</MudText></MudTd>
+                                <MudTd DataLabel="Título" Style="max-width:280px"><MudText Typo="Typo.body2" Style="white-space:normal">@Formato.Corto(context.Titulo, 90)</MudText></MudTd>
                                 <MudTd DataLabel="Apertura">@(context.FechaApertura?.ToString("dd/MM/yyyy") ?? "—")</MudTd>
                                 <MudTd DataLabel="Vence">@(context.FechaVencimiento?.ToString("dd/MM/yyyy HH:mm") ?? "sin fecha")</MudTd>
-                                <MudTd DataLabel="Estado">
-                                    <MudChip T="string" Size="Size.Small" Style="@ChipVenc(context.EstadoVencimiento)">@TextoVenc(context)</MudChip>
+                                <MudTd DataLabel="Situación">
+                                    @if (ReglaAlertas.VenceEnLaProximaHora(context.FechaVencimiento))
+                                    {
+                                        <span class="ta-tag urgente"><MudIcon Icon="@Icons.Material.Filled.AlarmOn" Style="font-size:14px" /> vence en @((int)Math.Ceiling((context.FechaVencimiento!.Value - DateTime.Now).TotalMinutes)) min</span>
+                                    }
+                                    else
+                                    {
+                                        <EstadoVencimientoChip Estado="@context.EstadoVencimiento" DiasRestantes="@context.DiasParaVencer" />
+                                    }
                                 </MudTd>
                             </RowTemplate>
                         </MudTable>
@@ -63,6 +97,7 @@ else
                 </MudExpansionPanels>
             </MudPaper>
         }
+        </div>
     }
 }
 
@@ -73,12 +108,25 @@ else
 
     private BandejaAnalistasDto _b = new();
     private bool _cargando = true;
+    private string? _error;
+    private string? _estado;
+    private (string? Analista, int? Mes, int? Anio)? _cargadoCon;
 
-    protected override async Task OnParametersSetAsync() => await Cargar();
+    protected override async Task OnParametersSetAsync()
+    {
+        // Solo consulta si cambiaron los parámetros: antes recargaba con cada render del padre.
+        var actuales = (Analista, Mes, Anio);
+        if (_cargadoCon == actuales) return;
+        _cargadoCon = actuales;
+        await Cargar();
+    }
+
+    private Task Recargar() => Cargar();
 
     private async Task Cargar()
     {
         _cargando = true;
+        _error = null;
         try
         {
             var f = new TicketFiltro
@@ -88,36 +136,47 @@ else
             };
             _b = await Api.BandejaAnalistasAsync(f);
         }
+        catch (ApiException ex) { _error = ex.MensajeUsuario; }
+        catch (Exception ex) { _error = ex.Message; }
         finally { _cargando = false; }
     }
 
-    private static string Iniciales(string n)
+    private const string ProximaHoraClave = "proxima_hora";
+
+    /// <summary>Tickets que vencen en los próximos ReglaAlertas.MinutosAntelacion minutos.</summary>
+    private List<AlertaTicket> ProximaHora => ReglaAlertas.Proximos(_b);
+
+    private void FiltrarEstado(string estado) => _estado = _estado == estado ? null : estado;
+
+    /// <summary>Los que vencen en la próxima hora van primero; luego, por fecha de vencimiento.</summary>
+    private List<TicketBandejaDto> TicketsVisibles(AnalistaBandejaDto a)
     {
-        if (string.IsNullOrWhiteSpace(n)) return "?";
-        var p = n.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return p.Length >= 2 ? $"{p[0][0]}{p[1][0]}".ToUpper() : n[..Math.Min(2, n.Length)].ToUpper();
+        IEnumerable<TicketBandejaDto> l = _estado switch
+        {
+            null => a.Tickets,
+            ProximaHoraClave => a.Tickets.Where(t => ReglaAlertas.VenceEnLaProximaHora(t.FechaVencimiento)),
+            _ => a.Tickets.Where(t => t.EstadoVencimiento == _estado)
+        };
+        return l.OrderByDescending(t => ReglaAlertas.VenceEnLaProximaHora(t.FechaVencimiento))
+                .ThenBy(t => t.FechaVencimiento ?? DateTime.MaxValue).ToList();
     }
-    private static string Corto(string? t) => string.IsNullOrEmpty(t) ? "—" : (t.Length > 90 ? t[..90] + "…" : t);
+
+    private async Task AbrirTicket(string refNum)
+    {
+        try
+        {
+            var t = await Api.ObtenerTicketAsync(refNum);
+            if (t is null) { Snackbar.Add($"No encontramos el ticket {refNum}.", Severity.Warning); return; }
+            await DialogService.ShowAsync<TicketDetalleDialog>($"Ticket {refNum}", new DialogParameters { ["Ticket"] = t },
+                new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        }
+        catch (Exception) { Snackbar.Add($"No pudimos abrir el ticket {refNum}.", Severity.Error); }
+    }
+
     private static string BordeAnalista(AnalistaBandejaDto a)
     {
         var color = a.Vencidos > 0 || a.VencenHoy > 0 ? "var(--op-vencido)"
                   : a.VencenPronto > 0 ? "var(--op-riesgo)" : "var(--bsc-borde)";
-        return $"border:1px solid var(--bsc-borde);border-left:4px solid {color};border-radius:10px";
+        return $"border:1px solid var(--bsc-borde);border-left:4px solid {color};border-radius:12px";
     }
-    private static string ChipVenc(string estado) => estado switch
-    {
-        "vencido" => "background:var(--op-vencido);color:#fff",
-        "vence_hoy" => "background:#C62828;color:#fff",
-        "vence_pronto" => "background:var(--op-riesgo);color:#fff",
-        "en_curso" => "background:var(--op-curso);color:#fff",
-        _ => "background:var(--texto-tenue);color:#fff"
-    };
-    private static string TextoVenc(TicketBandejaDto t) => t.EstadoVencimiento switch
-    {
-        "vencido" => t.DiasParaVencer.HasValue ? $"Vencido ({Math.Abs(t.DiasParaVencer.Value)}d)" : "Vencido",
-        "vence_hoy" => "Vence hoy",
-        "vence_pronto" => t.DiasParaVencer.HasValue ? $"En {t.DiasParaVencer}d" : "Pronto",
-        "en_curso" => t.DiasParaVencer.HasValue ? $"En {t.DiasParaVencer}d" : "En curso",
-        _ => "Sin fecha"
-    };
 }

@@ -1,35 +1,43 @@
-@* Encabezado de página: título, bajada, indicador de actualización y acciones. *@
-<div class="d-flex justify-space-between align-center flex-wrap gap-3 mb-4">
-    <div>
-        <MudText Typo="Typo.h5" Style="color:var(--texto-primario);font-weight:600">@Titulo</MudText>
-        @if (!string.IsNullOrWhiteSpace(Bajada))
+@* Encabezado de página: icono, título, bajada, indicador de actualización y acciones. *@
+<header class="ta-page-header">
+    <div class="titulo">
+        @if (!string.IsNullOrEmpty(Icono))
         {
-            <MudText Typo="Typo.body2" Style="color:var(--texto-secundario)">@Bajada</MudText>
+            <span class="icono"><MudIcon Icon="@Icono" /></span>
         }
+        <div>
+            <h1>@Titulo</h1>
+            @if (!string.IsNullOrWhiteSpace(Bajada))
+            {
+                <p>@Bajada</p>
+            }
+        </div>
     </div>
-    <div class="d-flex align-center gap-2">
-        @if (UltimaActualizacion.HasValue)
+    <div class="acciones">
+        @if (Actualizando || UltimaActualizacion.HasValue)
         {
-            <MudText Typo="Typo.caption" Style="color:var(--texto-tenue)">
-                @(Actualizando ? "Actualizando…" : $"Actualizado {Hace(UltimaActualizacion.Value)}")
-            </MudText>
+            <span class="@($"ta-actualizado {(Actualizando ? "cargando" : "")}")" title="@UltimaActualizacion?.ToString("dd/MM/yyyy HH:mm:ss")">
+                <span class="punto"></span>
+                @(Actualizando ? "Actualizando…" : $"Actualizado {UltimaActualizacion!.Value:HH:mm}")
+            </span>
+        }
+        @if (OnRefrescar.HasDelegate)
+        {
+            <MudTooltip Text="Actualizar datos">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" Size="Size.Small"
+                               aria-label="Actualizar datos" Disabled="Actualizando" OnClick="OnRefrescar" />
+            </MudTooltip>
         }
         @Acciones
     </div>
-</div>
+</header>
 
 @code {
     [Parameter] public string Titulo { get; set; } = "";
     [Parameter] public string? Bajada { get; set; }
+    [Parameter] public string? Icono { get; set; }
     [Parameter] public DateTime? UltimaActualizacion { get; set; }
     [Parameter] public bool Actualizando { get; set; }
+    [Parameter] public EventCallback OnRefrescar { get; set; }
     [Parameter] public RenderFragment? Acciones { get; set; }
-
-    private static string Hace(DateTime t)
-    {
-        var s = (DateTime.Now - t).TotalSeconds;
-        if (s < 60) return $"hace {(int)s} s";
-        if (s < 3600) return $"hace {(int)(s / 60)} min";
-        return t.ToString("HH:mm");
-    }
 }

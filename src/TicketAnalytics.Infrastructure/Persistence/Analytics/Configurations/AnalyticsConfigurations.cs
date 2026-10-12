@@ -13,7 +13,12 @@ public class CategoriaAlcanceConfig : IEntityTypeConfiguration<CategoriaAlcance>
         e.Property(x => x.Persid).HasMaxLength(60);
         e.Property(x => x.NombreCategoria).HasMaxLength(200).IsRequired();
         e.Property(x => x.TipoCaso).HasMaxLength(20).IsRequired();
+        // Las 4 categorías del alcance. Antes solo estaban las 2 de Solicitud: en una base nueva,
+        // EnsureCreated las sembraba y el respaldo SeedCategoriasSiVaciaAsync ya no agregaba las de
+        // Incidente (la tabla no estaba vacía), dejando todos los incidentes fuera del alcance.
         e.HasData(
+            new CategoriaAlcance { Persid = "pcat:405564", NombreCategoria = "Tecnología de la Información.Problema/Error.Sistemas.Canales & Medios de Pago", TipoCaso = "Incidente", Activo = true },
+            new CategoriaAlcance { Persid = "pcat:405565", NombreCategoria = "Tecnología de la Información.Problema/Error.Sistemas.Gestión e Información", TipoCaso = "Incidente", Activo = true },
             new CategoriaAlcance { Persid = "pcat:405614", NombreCategoria = "Tecnología de la Información.Solicitud.Sistemas.Canales & Medios de Pago", TipoCaso = "Solicitud", Activo = true },
             new CategoriaAlcance { Persid = "pcat:405616", NombreCategoria = "Tecnología de la Información.Solicitud.Sistemas.Gestión e Información", TipoCaso = "Solicitud", Activo = true }
         );

@@ -30,6 +30,18 @@ public static class TrabajoDiarioEndpoints
             await s.EliminarAsync(id, usuario, ct) ? Results.NoContent() : Results.NotFound())
          .WithSummary("Elimina una actividad.");
 
+        g.MapPost("/excel", async (ActividadFiltro f, ITrabajoDiarioService s, ILoggerFactory lf, CancellationToken ct) =>
+        {
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+            var actividades = await s.BuscarTodasAsync(f, ct);
+            var contexto = Services.ContextoExport.Rango(
+                f.FechaDesde?.ToDateTime(TimeOnly.MinValue), f.FechaHasta?.ToDateTime(TimeOnly.MinValue));
+            var bytes = Services.ListadosExcel.Actividades(actividades, contexto);
+            lf.CreateLogger("Exportaciones").LogInformation(
+                "Excel de Diario TI: {Filas} filas, {Bytes} bytes en {Ms} ms", actividades.Count, bytes.Length, reloj.ElapsedMilliseconds);
+            return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"Diario_TI_{DateTime.Now:yyyyMMdd_HHmm}.xlsx");
+        }).WithSummary("Excel (.xlsx) con TODAS las actividades que cumplen el filtro, con total de horas.");
+
         // Resumen (KPIs + gráficos)
         g.MapPost("/resumen", async (ActividadFiltro f, ITrabajoDiarioService s, CancellationToken ct) =>
             Results.Ok(await s.ResumenAsync(f, ct)))

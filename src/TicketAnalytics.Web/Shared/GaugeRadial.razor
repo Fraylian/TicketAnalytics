@@ -1,0 +1,76 @@
+@* Indicador circular de cumplimiento (SVG propio, sin librería).
+   El arco se dibuja desde 0 hasta el valor con transición; una marca indica la meta.
+   El color cambia según la distancia a la meta: verde / ámbar / rojo. *@
+
+<div class="ta-gauge" role="img" aria-label="@($"{Etiqueta}: {Valor:0.#}%")">
+    <div class="lienzo" style="@($"width:{Tamano}px;height:{Tamano}px")">
+        <svg width="@Tamano" height="@Tamano" viewBox="0 0 120 120">
+            <circle class="pista" cx="60" cy="60" r="@R" fill="none" stroke-width="@Grosor"
+                    stroke-dasharray="@Fmt(ArcoTotal) @Fmt(Circ)" transform="rotate(135 60 60)" stroke-linecap="round" />
+            <circle class="valor" cx="60" cy="60" r="@R" fill="none" stroke-width="@Grosor" stroke="@ColorValor"
+                    stroke-dasharray="@Fmt(ArcoTotal) @Fmt(Circ)" stroke-dashoffset="@Fmt(_offset)"
+                    transform="rotate(135 60 60)" stroke-linecap="round" />
+            @if (Meta.HasValue)
+            {
+                var ang = (135 + 270 * Math.Clamp(Meta.Value, 0, 100) / 100.0) * Math.PI / 180;
+                var x1 = 60 + (R - Grosor / 2.0 - 3) * Math.Cos(ang);
+                var y1 = 60 + (R - Grosor / 2.0 - 3) * Math.Sin(ang);
+                var x2 = 60 + (R + Grosor / 2.0 + 3) * Math.Cos(ang);
+                var y2 = 60 + (R + Grosor / 2.0 + 3) * Math.Sin(ang);
+                <line class="meta" x1="@Fmt(x1)" y1="@Fmt(y1)" x2="@Fmt(x2)" y2="@Fmt(y2)" stroke-width="2" stroke-linecap="round">
+                    <title>Meta @Meta%</title>
+                </line>
+            }
+        </svg>
+        <div class="centro">
+            <div class="num" style="@($"color:{ColorValor}")">
+                <AnimatedNumber Valor="Valor" Decimales="@(Valor % 1 == 0 ? 0 : 1)" /><span class="kpi-sufijo">%</span>
+            </div>
+            <div class="lbl">@Etiqueta</div>
+        </div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Pie))
+    {
+        <div class="pie">@Pie</div>
+    }
+</div>
+
+@code {
+    [Parameter] public double Valor { get; set; }
+    [Parameter] public string Etiqueta { get; set; } = "Cumplimiento";
+    [Parameter] public string? Pie { get; set; }
+    /// <summary>Meta en porcentaje (0-100). Pinta una marca y define los colores.</summary>
+    [Parameter] public double? Meta { get; set; } = 90;
+    [Parameter] public int Tamano { get; set; } = 170;
+
+    private const double R = 50;
+    private const double Grosor = 11;
+    private static readonly double Circ = 2 * Math.PI * R;
+    private static readonly double ArcoTotal = Circ * 0.75;   // arco de 270°
+
+    private double _offset = ArcoTotal;    // arranca vacío y se llena tras el primer render
+
+    private string ColorValor
+    {
+        get
+        {
+            var meta = Meta ?? 90;
+            if (Valor >= meta) return "var(--op-cumplido)";
+            if (Valor >= meta - 20) return "var(--op-riesgo)";
+            return "var(--op-vencido)";
+        }
+    }
+
+    private double OffsetObjetivo => ArcoTotal * (1 - Math.Clamp(Valor, 0, 100) / 100.0);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Math.Abs(_offset - OffsetObjetivo) < 0.01) return;
+        // Un frame de espera para que el navegador pinte el estado inicial y la transición se vea.
+        if (firstRender) await Task.Delay(30);
+        _offset = OffsetObjetivo;
+        StateHasChanged();
+    }
+
+    private static string Fmt(double v) => v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+}

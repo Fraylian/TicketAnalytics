@@ -1,0 +1,70 @@
+@* Lista de barras horizontales: legible, animada y clicable.
+   Reemplaza las barras hechas a mano repetidas en varias pantallas.
+   Con OnSeleccionar, cada fila filtra / abre detalle; la fila activa queda resaltada. *@
+
+@if (!Items.Any())
+{
+    <EmptyState Mensaje="@MensajeVacio" Icono="@Icons.Material.Filled.BarChart" />
+}
+else
+{
+    var max = Math.Max(1, Items.Max(i => i.Valor));
+    var total = Items.Sum(i => i.Valor);
+    var visibles = _verTodos ? Items : Items.Take(MaxVisibles).ToList();
+
+    <div class="ta-barlist">
+        @for (var idx = 0; idx < visibles.Count; idx++)
+        {
+            var it = visibles[idx];
+            var ancho = it.Valor * 100.0 / max;
+            var pct = total == 0 ? 0 : Math.Round(it.Valor * 100.0 / total);
+            var sel = Seleccionado is not null && Seleccionado == it.Clave;
+            var atenuada = Seleccionado is not null && !sel;
+            <div class="@($"fila {(Clicable ? "click" : "")} {(sel ? "sel" : "")} {(atenuada ? "atenuada" : "")}")"
+                 style="@($"--i:{idx}")"
+                 title="@($"{it.Etiqueta}: {it.Valor:0.##} ({pct}%)")"
+                 tabindex="@(Clicable ? 0 : -1)"
+                 role="@(Clicable ? "button" : null)"
+                 @onclick="@(() => Elegir(it))" @onkeydown="@(e => Tecla(e, it))">
+                <span class="etq">@it.Etiqueta</span>
+                <div class="riel"><span style="@($"--w:{F(ancho)}%;background:{it.Color ?? Color}")"></span></div>
+                <span class="val"><b>@FormatoValor(it.Valor)</b>@(MostrarPorcentaje ? $" · {pct}%" : "")@(string.IsNullOrEmpty(it.Detalle) ? "" : $" · {it.Detalle}")</span>
+            </div>
+        }
+    </div>
+    @if (Items.Count > MaxVisibles)
+    {
+        <MudButton Variant="Variant.Text" Size="Size.Small" Class="mt-1"
+                   EndIcon="@(_verTodos ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                   OnClick="@(() => _verTodos = !_verTodos)">
+            @(_verTodos ? "Ver menos" : $"Ver los {Items.Count}")
+        </MudButton>
+    }
+}
+
+@code {
+    public record Item(string Clave, string Etiqueta, double Valor, string? Color = null, string? Detalle = null);
+
+    [Parameter] public List<Item> Items { get; set; } = new();
+    [Parameter] public string Color { get; set; } = "var(--dato-1)";
+    [Parameter] public string? Seleccionado { get; set; }
+    [Parameter] public EventCallback<Item> OnSeleccionar { get; set; }
+    [Parameter] public bool MostrarPorcentaje { get; set; } = true;
+    [Parameter] public int MaxVisibles { get; set; } = 8;
+    [Parameter] public string Sufijo { get; set; } = "";
+    [Parameter] public string MensajeVacio { get; set; } = "Sin datos para el período.";
+
+    private bool _verTodos;
+    private bool Clicable => OnSeleccionar.HasDelegate;
+
+    private string FormatoValor(double v) => (v % 1 == 0 ? v.ToString("0") : v.ToString("0.#")) + Sufijo;
+
+    private async Task Elegir(Item it) { if (Clicable) await OnSeleccionar.InvokeAsync(it); }
+
+    private async Task Tecla(KeyboardEventArgs e, Item it)
+    {
+        if (Clicable && e.Key is "Enter" or " ") await OnSeleccionar.InvokeAsync(it);
+    }
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

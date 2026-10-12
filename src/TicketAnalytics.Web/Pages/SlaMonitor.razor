@@ -1,108 +1,167 @@
 @page "/sla"
 @inject TicketAnalyticsApi Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>SLA · TicketAnalytics</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-1">Monitor de SLA</MudText>
-<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">Tiempos, vencimientos y cumplimiento en tiempo real</MudText>
+<PageHeader Titulo="Monitor de SLA" Icono="@Icons.Material.Filled.Timer"
+            Bajada="Tiempos, vencimientos y cumplimiento del período"
+            UltimaActualizacion="_ultimaCarga" Actualizando="_cargando" OnRefrescar="Cargar" />
 
 <FiltroPanel Filtro="_filtro" OnAplicar="Cargar" Contexto="sla" />
 
-@if (_cargando)
+@if (_error is not null)
+{
+    <ErrorState Mensaje="No pudimos cargar el monitor de SLA." Detalle="@_error" OnReintentar="Cargar" />
+}
+else if (_cargando && _resumen is null)
 {
     <MudGrid Spacing="3">
+        <MudItem xs="12" md="3"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="260px" Animation="Animation.Wave" /></MudItem>
         @for (var i = 0; i < 4; i++)
         {
-            <MudItem xs="12" sm="6" md="3"><MudSkeleton Height="110px" /></MudItem>
+            <MudItem xs="6" md="2"><KpiCard Cargando="true" /></MudItem>
         }
+        <MudItem xs="12"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="360px" Animation="Animation.Wave" /></MudItem>
     </MudGrid>
 }
 else if (_resumen is not null)
 {
-    <MudGrid Spacing="3" Class="mb-2">
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 kpi-card" Elevation="1">
-                <MudText Typo="Typo.overline" Class="mud-text-secondary">Cumplimiento SLA</MudText>
-                <MudText Typo="Typo.h3" Style="color:#2E7D32;">@_resumen.PctCumplimiento%</MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_resumen.DentroSla de @_resumen.Total tickets</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 kpi-card" Elevation="1" Style="border-left:4px solid #C62828;">
-                <MudText Typo="Typo.overline" Class="mud-text-secondary">Vencidos</MudText>
-                <MudText Typo="Typo.h3" Style="color:#C62828;">@_resumen.Vencidos</MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">requieren atención inmediata</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 kpi-card" Elevation="1" Style="border-left:4px solid #ED6C02;">
-                <MudText Typo="Typo.overline" Class="mud-text-secondary">Próximos a vencer</MudText>
-                <MudText Typo="Typo.h3" Style="color:#ED6C02;">@_resumen.ProximosAVencer</MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">80%+ de SLA consumido</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudPaper Class="pa-4 kpi-card" Elevation="1">
-                <MudText Typo="Typo.overline" Class="mud-text-secondary">Prom. resolución</MudText>
-                <MudText Typo="Typo.h3" Color="Color.Primary">@_resumen.PromedioHorasResolucion.ToString("0.#")h</MudText>
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">@_resumen.EnCurso en curso</MudText>
-            </MudPaper>
-        </MudItem>
-    </MudGrid>
-
+    <div class="@(_cargando ? "ta-actualizando" : "")" @key="_version">
     <MudGrid Spacing="3">
-        <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Elevation="1" Style="height:100%;">
-                <div class="d-flex align-center mb-3">
-                    <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error" Class="mr-2" />
-                    <MudText Typo="Typo.h6">Tickets vencidos</MudText>
+        <MudItem xs="12" md="3">
+            <div class="panel d-flex flex-column align-center justify-center ta-alto-total">
+                <GaugeRadial Valor="@((double)_resumen.PctCumplimiento)" Meta="90" Etiqueta="Cumplimiento"
+                             Pie="@($"{_resumen.DentroSla} de {_resumen.Total} tickets resueltos dentro de SLA")" Tamano="180" />
+            </div>
+        </MudItem>
+        <MudItem xs="12" md="9">
+            <MudGrid Spacing="3" Class="ta-stagger">
+                <MudItem xs="6" lg="3">
+                    <KpiCard Titulo="Vencidos" Valor="@_resumen.Vencidos.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido"
+                             Nota="requieren atención inmediata" Activo="@(_lista == "vencidos")" TextoAccion="Ver listado"
+                             OnClick="@(() => CambiarLista("vencidos"))" />
+                </MudItem>
+                <MudItem xs="6" lg="3">
+                    <KpiCard Titulo="Próximos a vencer" Valor="@_resumen.ProximosAVencer.ToString()" Icono="@Icons.Material.Filled.HourglassBottom" Acento="riesgo"
+                             Nota="80% o más del SLA consumido" Activo="@(_lista == "proximos")" TextoAccion="Ver listado"
+                             OnClick="@(() => CambiarLista("proximos"))" />
+                </MudItem>
+                <MudItem xs="6" lg="3">
+                    <KpiCard Titulo="En curso" Valor="@_resumen.EnCurso.ToString()" Icono="@Icons.Material.Filled.Autorenew" Acento="curso"
+                             Progreso="@Pct(_resumen.EnCurso, _resumen.Total)" Nota="@($"{Formato.Porcentaje(_resumen.EnCurso, _resumen.Total)} del total")" />
+                </MudItem>
+                <MudItem xs="6" lg="3">
+                    <KpiCard Titulo="Resolución promedio" Valor="@($"{_resumen.PromedioHorasResolucion:0.#}h")" Icono="@Icons.Material.Filled.Timelapse"
+                             Acento="neutro" Nota="@($"≈ {_resumen.PromedioHorasResolucion / 24:0.#} días por ticket")" />
+                </MudItem>
+            </MudGrid>
+            <div class="panel mt-3 ta-alto-auto">
+                <div class="panel-cab">
+                    <div>
+                        <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.Speed" Size="Size.Small" Color="Color.Primary" /> Riesgo del período</h2>
+                        <div class="panel-sub">@_resumen.Total tickets con SLA en el período filtrado</div>
+                    </div>
                 </div>
-                @if (_vencidos.Any())
-                {
-                    <MudTable Items="_vencidos" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="360px">
-                        <HeaderContent>
-                            <MudTh>Ticket</MudTh><MudTh>Apertura</MudTh><MudTh>Venció</MudTh>
-                            <MudTh Style="text-align:right">% Consumido</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd><b>@context.NoTicket</b></MudTd>
-                            <MudTd>@context.FechaApertura?.ToString("dd/MM/yy")</MudTd>
-                            <MudTd>@context.FechaVencimiento?.ToString("dd/MM/yy")</MudTd>
-                            <MudTd Style="text-align:right">
-                                <MudChip T="string" Size="Size.Small" Color="Color.Error">@context.PctConsumido?.ToString("0")%</MudChip>
-                            </MudTd>
-                        </RowTemplate>
-                    </MudTable>
-                }
-                else { <MudText Typo="Typo.body2" Class="mud-text-secondary">No hay tickets vencidos. Buen trabajo.</MudText> }
-            </MudPaper>
+                <BarraRiesgoSla Vencidos="_resumen.Vencidos" EnRiesgo="_resumen.ProximosAVencer"
+                                EnCurso="@Math.Max(0, _resumen.EnCurso - _resumen.ProximosAVencer)" Cumplidos="_resumen.DentroSla" />
+            </div>
         </MudItem>
 
         <MudItem xs="12" md="6">
-            <MudPaper Class="pa-4" Elevation="1" Style="height:100%;">
-                <div class="d-flex align-center mb-3">
-                    <MudIcon Icon="@Icons.Material.Filled.Timer" Color="Color.Warning" Class="mr-2" />
-                    <MudText Typo="Typo.h6">Próximos a vencer</MudText>
+            <div class="panel ta-alto-total">
+                <div class="panel-cab">
+                    <div>
+                        <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.StackedBarChart" Size="Size.Small" Color="Color.Primary" /> Cumplimiento por categoría</h2>
+                        <div class="panel-sub">El porcentaje de la derecha es lo resuelto dentro de SLA (meta 90%)</div>
+                    </div>
                 </div>
-                @if (_proximos.Any())
-                {
-                    <MudTable Items="_proximos" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="360px">
-                        <HeaderContent>
-                            <MudTh>Ticket</MudTh><MudTh Style="text-align:right">Horas restantes</MudTh><MudTh>Progreso</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd><b>@context.NoTicket</b></MudTd>
-                            <MudTd Style="text-align:right">@context.HorasRestantes?.ToString("0.#")h</MudTd>
-                            <MudTd style="width:40%">
-                                <MudProgressLinear Color="Color.Warning" Value="@(context.PctConsumido ?? 0)" Size="Size.Medium" Rounded="true" />
-                            </MudTd>
-                        </RowTemplate>
-                    </MudTable>
-                }
-                else { <MudText Typo="Typo.body2" Class="mud-text-secondary">Ningún ticket próximo a vencer.</MudText> }
-            </MudPaper>
+                <StackedBar100 Filas="_porCategoria" Unidad="ticket" UnidadPlural="tickets" Meta="90" MensajeVacio="Sin tickets con SLA en el período." />
+            </div>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <ChartPanel Titulo="¿Cuánto les queda a los próximos a vencer?" Icono="@Icons.Material.Filled.AvTimer"
+                        Subtitulo="Tickets agrupados por horas restantes de SLA" Vacio="@(!_proximos.Any())"
+                        MensajeVacio="Ningún ticket próximo a vencer." Clicable="true" Nota="Clic en una barra para filtrar el listado">
+                <ApexChart TItem="Tramo" Options="_opcionesTramos" Height="280"
+                           OnDataPointSelection="@((SelectedData<Tramo> e) => SeleccionarTramo(e.DataPoint?.X?.ToString()))">
+                    <ApexPointSeries TItem="Tramo" Items="_tramos" Name="Tickets" XValue="@(t => t.Etiqueta)" YValue="@(t => t.Cantidad)"
+                                     SeriesType="SeriesType.Bar" />
+                </ApexChart>
+            </ChartPanel>
         </MudItem>
     </MudGrid>
+
+    @* ===== Listado de trabajo ===== *@
+    <SeccionBloque Titulo="Listado de trabajo" Icono="@Icons.Material.Filled.FormatListBulleted"
+                   Bajada="Clic en un ticket para ver su detalle, gestionarlo o agregarlo al reporte del VP" />
+    <div class="panel pa-0">
+        <div class="d-flex justify-space-between align-center flex-wrap gap-2 pa-4 pb-2">
+            <div class="ta-pills">
+                <button type="button" class="@($"ta-pill {(_lista == "vencidos" ? "activa" : "")}")" style="--pill:#C62828" @onclick="@(() => CambiarLista("vencidos"))">
+                    <MudIcon Icon="@Icons.Material.Filled.Error" Style="font-size:16px" /> Vencidos <span class="cnt">@_vencidos.Count</span>
+                </button>
+                <button type="button" class="@($"ta-pill {(_lista == "proximos" ? "activa" : "")}")" style="--pill:#ED6C02" @onclick="@(() => CambiarLista("proximos"))">
+                    <MudIcon Icon="@Icons.Material.Filled.HourglassBottom" Style="font-size:16px" /> Próximos a vencer <span class="cnt">@_proximos.Count</span>
+                </button>
+                @if (_tramoSel is not null)
+                {
+                    <span class="ta-chip-filtro">
+                        Restan @_tramoSel
+                        <button type="button" aria-label="Quitar filtro de tramo" @onclick="@(() => SeleccionarTramo(null))">
+                            <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                        </button>
+                    </span>
+                }
+            </div>
+            <MudTextField T="string" @bind-Value="_busqueda" Immediate="true" Placeholder="Buscar ticket…" Clearable="true"
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" Style="max-width:260px" />
+        </div>
+
+        @if (!ListaVisible.Any())
+        {
+            <EmptyState Icono="@Icons.Material.Filled.CheckCircle" ColorIcono="var(--op-cumplido)"
+                        Mensaje="@(_lista == "vencidos" ? "No hay tickets vencidos. Buen trabajo." : "Ningún ticket próximo a vencer en este filtro.")" />
+        }
+        else
+        {
+            <MudTable Items="ListaVisible" Dense="true" Hover="true" Elevation="0" FixedHeader="true" Height="440px"
+                      Class="ta-tabla-click ta-tabla-sticky" Breakpoint="Breakpoint.Sm" T="SlaTicketDto"
+                      OnRowClick="@((TableRowClickEventArgs<SlaTicketDto> a) => AbrirTicket(a.Item!.NoTicket))">
+                <HeaderContent>
+                    <MudTh><MudTableSortLabel SortBy="new Func<SlaTicketDto, object>(x => x.NoTicket)">Ticket</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortBy="new Func<SlaTicketDto, object>(x => x.FechaApertura ?? DateTime.MinValue)">Apertura</MudTableSortLabel></MudTh>
+                    <MudTh><MudTableSortLabel SortBy="new Func<SlaTicketDto, object>(x => x.FechaVencimiento ?? DateTime.MaxValue)">Vence</MudTableSortLabel></MudTh>
+                    <MudTh Style="text-align:right">
+                        <MudTableSortLabel SortBy="new Func<SlaTicketDto, object>(x => x.HorasRestantes ?? double.MaxValue)" InitialDirection="SortDirection.Ascending">
+                            @(_lista == "vencidos" ? "Atraso" : "Restan")
+                        </MudTableSortLabel>
+                    </MudTh>
+                    <MudTh Style="width:30%">
+                        <MudTableSortLabel SortBy="new Func<SlaTicketDto, object>(x => x.PctConsumido ?? 0)">SLA consumido</MudTableSortLabel>
+                    </MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Ticket"><b>@context.NoTicket</b></MudTd>
+                    <MudTd DataLabel="Apertura">@context.FechaApertura?.ToString("dd/MM/yy HH:mm")</MudTd>
+                    <MudTd DataLabel="Vence">@context.FechaVencimiento?.ToString("dd/MM/yy HH:mm")</MudTd>
+                    <MudTd DataLabel="Restan" Style="text-align:right">
+                        <span style="@($"font-weight:650;color:{ColorHoras(context)}")">@Formato.Horas(context.HorasRestantes is { } h ? Math.Abs(h) : null)</span>
+                    </MudTd>
+                    <MudTd DataLabel="SLA consumido">
+                        <div class="d-flex align-center gap-2">
+                            <MudProgressLinear Color="@(context.PctConsumido >= 100 ? Color.Error : context.PctConsumido >= 80 ? Color.Warning : Color.Info)"
+                                               Value="@Math.Min(100, context.PctConsumido ?? 0)" Size="Size.Small" Rounded="true" Style="flex:1" />
+                            <span class="ta-muted" style="font-size:.75rem;min-width:40px;text-align:right">@context.PctConsumido?.ToString("0")%</span>
+                        </div>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </div>
+    </div>
 }
 
 @code {
@@ -110,19 +169,107 @@ else if (_resumen is not null)
     private ResumenSlaDto? _resumen;
     private List<SlaTicketDto> _vencidos = new();
     private List<SlaTicketDto> _proximos = new();
+    private List<StackedBar100.Fila> _porCategoria = new();
+    private List<Tramo> _tramos = new();
     private bool _cargando = true;
+    private string? _error;
+    private DateTime? _ultimaCarga;
+    private int _version;
+
+    private string _lista = "vencidos";
+    private string? _tramoSel;
+    private string? _busqueda;
+
+    public class Tramo { public string Etiqueta { get; set; } = ""; public decimal Cantidad { get; set; } public double Desde { get; set; } public double Hasta { get; set; } }
+
+    private static readonly (string Etiqueta, double Desde, double Hasta)[] Tramos =
+    {
+        ("< 4 h", 0, 4), ("4–8 h", 4, 8), ("8–24 h", 8, 24), ("1–3 días", 24, 72), ("> 3 días", 72, double.MaxValue)
+    };
+
+    private readonly ApexChartOptions<Tramo> _opcionesTramos =
+        ChartTheme.Barras<Tramo>(new() { "#C62828", "#E65100", "#ED6C02", "#F9A825", "#15528E" }, distribuidas: true, etiquetas: true);
 
     protected override async Task OnInitializedAsync() => await Cargar();
 
     private async Task Cargar()
     {
-        _cargando = true; StateHasChanged();
+        _cargando = true;
+        _error = null;
+        StateHasChanged();
         try
         {
-            _resumen = await Api.SlaResumenAsync(_filtro);
-            _vencidos = await Api.SlaVencidosAsync(_filtro);
-            _proximos = await Api.SlaProximosAVencerAsync(_filtro);
+            var tRes = Api.SlaResumenAsync(_filtro);
+            var tVen = Api.SlaVencidosAsync(_filtro);
+            var tPro = Api.SlaProximosAVencerAsync(_filtro);
+            var tCat = Api.SlaCategoriaAsync(_filtro);
+            await Task.WhenAll(tRes, tVen, tPro, tCat);
+
+            _resumen = tRes.Result;
+            _vencidos = tVen.Result;
+            _proximos = tPro.Result;
+            _porCategoria = tCat.Result.Where(c => c.TotalTickets > 0).OrderByDescending(c => c.TotalTickets)
+                .Select(c => new StackedBar100.Fila(c.Categoria, Formato.CategoriaCorta(c.Categoria), new()
+                {
+                    new("Dentro de SLA", c.SlaCumplido, "var(--op-cumplido)"),
+                    new("En curso", c.SlaEnCurso, "var(--op-curso)"),
+                    new("Fuera de SLA", c.SlaIncumplido, "var(--op-vencido)")
+                })).ToList();
+            _tramos = Tramos.Select(t => new Tramo
+            {
+                Etiqueta = t.Etiqueta, Desde = t.Desde, Hasta = t.Hasta,
+                Cantidad = _proximos.Count(p => p.HorasRestantes >= t.Desde && p.HorasRestantes < t.Hasta)
+            }).ToList();
+            _ultimaCarga = DateTime.Now;
+            _version++;
         }
+        catch (ApiException ex) { _error = ex.MensajeUsuario; }
+        catch (Exception ex) { _error = ex.Message; }
         finally { _cargando = false; StateHasChanged(); }
+    }
+
+    private IEnumerable<SlaTicketDto> ListaVisible
+    {
+        get
+        {
+            IEnumerable<SlaTicketDto> l = _lista == "vencidos" ? _vencidos : _proximos;
+            if (_lista == "proximos" && _tramoSel is not null)
+            {
+                var t = _tramos.FirstOrDefault(x => x.Etiqueta == _tramoSel);
+                if (t is not null) l = l.Where(p => p.HorasRestantes >= t.Desde && p.HorasRestantes < t.Hasta);
+            }
+            if (!string.IsNullOrWhiteSpace(_busqueda))
+                l = l.Where(p => p.NoTicket.Contains(_busqueda.Trim(), StringComparison.OrdinalIgnoreCase));
+            return l;
+        }
+    }
+
+    private void CambiarLista(string lista)
+    {
+        _lista = lista;
+        if (lista == "vencidos") _tramoSel = null;
+    }
+
+    private void SeleccionarTramo(string? etiqueta)
+    {
+        _tramoSel = string.IsNullOrWhiteSpace(etiqueta) || _tramoSel == etiqueta ? null : etiqueta;
+        if (_tramoSel is not null) _lista = "proximos";
+    }
+
+    private static string ColorHoras(SlaTicketDto t)
+        => t.Vencido || t.HorasRestantes < 0 ? "var(--op-vencido)" : t.HorasRestantes < 8 ? "var(--op-vencido)" : "var(--op-riesgo)";
+
+    private static double Pct(int parte, int total) => total <= 0 ? 0 : Math.Round(parte * 100.0 / total, 1);
+
+    private async Task AbrirTicket(string refNum)
+    {
+        try
+        {
+            var t = await Api.ObtenerTicketAsync(refNum);
+            if (t is null) { Snackbar.Add($"No encontramos el ticket {refNum}.", Severity.Warning); return; }
+            await DialogService.ShowAsync<TicketDetalleDialog>($"Ticket {refNum}", new DialogParameters { ["Ticket"] = t },
+                new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        }
+        catch (Exception) { Snackbar.Add($"No pudimos abrir el ticket {refNum}.", Severity.Error); }
     }
 }

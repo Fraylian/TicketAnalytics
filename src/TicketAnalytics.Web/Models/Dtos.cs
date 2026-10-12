@@ -338,3 +338,14 @@ public static class EtapasSeguimiento
     };
     public static string Texto(int id) => Todas.FirstOrDefault(e => e.Id == id).Texto ?? id.ToString();
 }
+
+/// <summary>Conteos de la bandeja de seguimiento para los filtros aplicados (todas las páginas).</summary>
+public class ResumenSeguimientoDto
+{
+    public int Total { get; set; }
+    public int ConJira { get; set; }
+    public int ConProveedor { get; set; }
+    public int RequierenAtencion { get; set; }
+    public int SinActualizar { get; set; }
+    public int EnReporteVP { get; set; }
+}

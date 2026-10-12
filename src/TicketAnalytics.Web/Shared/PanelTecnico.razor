@@ -1,6 +1,9 @@
 @* Panel de trabajo de un técnico: sus casos listados con las mismas columnas
    que la cola de CA Service Desk, con sub-filtros rápidos por vencimiento. *@
 @inject TicketAnalyticsApi Api
+@inject FileDownloadService Descargas
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <MudPaper Elevation="0" Class="pa-4 mt-3 ta-enter"
           Style="border:1px solid var(--bsc-borde);border-radius:var(--radius-md)">
@@ -13,9 +16,9 @@
             </MudText>
         </div>
         <div class="d-flex gap-1">
-            <MudTooltip Text="Exportar lo que se ve">
-                <MudIconButton Icon="@Icons.Material.Filled.Download" Size="Size.Small"
-                               aria-label="Exportar" OnClick="Exportar" Disabled="_cargando || _total == 0" />
+            <MudTooltip Text="Exportar esta vista a Excel (todas las filas)">
+                <MudIconButton Icon="@(_exportando ? Icons.Material.Filled.HourglassTop : Icons.Material.Filled.TableView)" Size="Size.Small" Color="Color.Success"
+                               aria-label="Exportar a Excel" OnClick="Exportar" Disabled="_cargando || _exportando || _total == 0" />
             </MudTooltip>
             <MudTooltip Text="Cerrar panel">
                 <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
@@ -25,15 +28,11 @@
     </div>
 
     @* Sub-filtros rápidos: mismas categorías del semáforo *@
-    <div class="d-flex gap-2 mb-3 flex-wrap">
+    <div class="ta-pills mb-3">
         @foreach (var v in Vistas)
         {
-            <MudChip T="string" Size="Size.Small" OnClick="@(() => CambiarVista(v.Clave))"
-                     Style="@(_vista == v.Clave
-                              ? $"background:{v.Color};color:#fff;cursor:pointer;font-weight:600"
-                              : $"background:transparent;color:{v.Color};border:1px solid {v.Color};cursor:pointer")">
-                @v.Texto
-            </MudChip>
+            <button type="button" class="@($"ta-pill {(_vista == v.Clave ? "activa" : "")}")" style="@($"--pill:{v.Color}")"
+                    @onclick="@(() => CambiarVista(v.Clave))">@v.Texto</button>
         }
     </div>
 
@@ -55,7 +54,12 @@
     }
     else if (EsOrdenCambio)
     {
-        <MudTable Items="_ocs" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky"
+        @if (_total > _ocs.Count)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">Se muestran las primeras @_ocs.Count de @_total órdenes. El Excel incluye todas.</MudAlert>
+        }
+        <MudTable Items="_ocs" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky ta-tabla-click" T="OrdenCambioConTicketsDto"
+                  OnRowClick="@((TableRowClickEventArgs<OrdenCambioConTicketsDto> a) => VerOc(a.Item!))"
                   Breakpoint="Breakpoint.Md" FixedHeader="true" Height="55vh">
             <HeaderContent>
                 <MudTh>No. OC</MudTh>
@@ -89,7 +93,12 @@
     }
     else
     {
-        <MudTable Items="_tickets" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky"
+        @if (_vista != "pronto" && _total > _tickets.Count)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">Se muestran los primeros @_tickets.Count de @_total tickets. El Excel incluye todos.</MudAlert>
+        }
+        <MudTable Items="_tickets" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky ta-tabla-click" T="TicketEnriquecidoDto"
+                  OnRowClick="@((TableRowClickEventArgs<TicketEnriquecidoDto> a) => VerTicket(a.Item!))"
                   Breakpoint="Breakpoint.Md" FixedHeader="true" Height="55vh">
             <HeaderContent>
                 <MudTh>Solicitud núm.</MudTh>
@@ -190,10 +199,11 @@
         var f = new OrdenCambioFiltro
         {
             AsignatarioNombre = Tecnico,
-            PageSize = 300,
+            PageSize = 500,
             OrderBy = "vencimiento"
         };
         AplicarVistaOc(f);
+        _ultimoFiltroOc = f;
 
         var r = await Api.BuscarOcAvanzadoAsync(f);
         _ocs = r.Items.ToList();
@@ -219,7 +229,7 @@
         var f = new TicketFiltro
         {
             AsignatarioNombre = Tecnico,
-            PageSize = 300,
+            PageSize = 500,
             OrderBy = "fechaapertura",
             OrderDesc = true
         };
@@ -236,6 +246,7 @@
             case "pronto": f.SoloAbiertos = true; break;
         }
 
+        _ultimoFiltroTickets = f;
         var r = await Api.BuscarTicketsAsync(f);
         var items = r.Items.ToList();
 
@@ -250,11 +261,36 @@
     private string EtiquetaVista()
         => Vistas.FirstOrDefault(v => v.Clave == _vista)?.Texto ?? "Todas";
 
+    private OrdenCambioFiltro? _ultimoFiltroOc;
+    private TicketFiltro? _ultimoFiltroTickets;
+    private bool _exportando;
+
+    /// <summary>Excel real con TODAS las filas de la vista actual (mismo filtro que la tabla).</summary>
     private async Task Exportar()
     {
-        if (EsOrdenCambio) await CsvExport.DescargarOrdenesCambioAsync(_ocs);
-        else await CsvExport.DescargarTicketsAsync(_tickets);
+        if (_exportando) return;
+        _exportando = true;
+        try
+        {
+            var sufijo = $"{Tecnico.Replace(' ', '_')}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx";
+            if (EsOrdenCambio && _ultimoFiltroOc is not null)
+                await Descargas.DescargarExcelAsync($"OC_{sufijo}", await Api.OcExcelBytesAsync(_ultimoFiltroOc));
+            else if (!EsOrdenCambio && _ultimoFiltroTickets is not null)
+                await Descargas.DescargarExcelAsync($"Tickets_{sufijo}", await Api.TicketsExcelBytesAsync(_ultimoFiltroTickets));
+            Snackbar.Add("Excel generado", Severity.Success);
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception) { Snackbar.Add("No pudimos generar el Excel.", Severity.Error); }
+        finally { _exportando = false; }
     }
+
+    private async Task VerTicket(TicketEnriquecidoDto t)
+        => await DialogService.ShowAsync<TicketDetalleDialog>($"Ticket {t.NoTicket}", new DialogParameters { ["Ticket"] = t },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+
+    private async Task VerOc(OrdenCambioConTicketsDto oc)
+        => await DialogService.ShowAsync<OrdenCambioDetalleDialog>($"OC {oc.NoOC}", new DialogParameters { ["Orden"] = oc },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
 
     private static string Corto(string? t, int max)
         => string.IsNullOrWhiteSpace(t) ? "—" : (t.Length > max ? t[..max] + "…" : t);

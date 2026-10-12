@@ -2,30 +2,41 @@
 @inject TicketAnalyticsApi Api
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
-@inject IJSRuntime JS
 @inject FileDownloadService Descargas
+@implements IDisposable
 
 <PageTitle>Proveedores · TicketAnalytics</PageTitle>
 
-<div class="d-flex justify-space-between align-center mb-2 flex-wrap gap-2">
-    <div>
-        <h1 class="seccion-titulo">Matriz de proveedores</h1>
-        <p class="seccion-bajada">Casos reportados a proveedores por mes calendario, con control de SLA</p>
-    </div>
-    <div class="d-flex gap-2">
+<PageHeader Titulo="Matriz de proveedores" Icono="@Icons.Material.Filled.Business"
+            Bajada="Casos reportados a proveedores por mes calendario, con control de SLA"
+            UltimaActualizacion="_ultimaCarga" Actualizando="_cargando" OnRefrescar="Recargar">
+    <Acciones>
+        <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@(_exportando ? null : Icons.Material.Filled.TableView)"
+                   OnClick="ExportarExcel" Disabled="_exportando">
+            @if (_exportando) { <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" /><span>Generando…</span> }
+            else { <span>Excel de la matriz</span> }
+        </MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AbrirReporte(null))">Registrar reporte</MudButton>
-    </div>
-</div>
+    </Acciones>
+</PageHeader>
 
-<!-- ===== Selector de mes + filtros ===== -->
-<MudPaper Class="pa-3 mb-3" Elevation="0" Style="border:1px solid var(--bsc-borde);border-radius:12px;">
-    <MudGrid Spacing="2" AlignItems="Center">
+<!-- ===== Filtros (mismo diseño que el resto de pantallas) ===== -->
+<div class="ta-filtros">
+    <div class="ta-pills fila-pills">
+        <span class="lbl">Período:</span>
+        <button type="button" class="@($"ta-pill {(EsMes(DateTime.Today) ? "activa" : "")}")" @onclick="@(() => IrAMes(DateTime.Today))">Este mes</button>
+        <button type="button" class="@($"ta-pill {(EsMes(DateTime.Today.AddMonths(-1)) ? "activa" : "")}")" @onclick="@(() => IrAMes(DateTime.Today.AddMonths(-1)))">Mes pasado</button>
+        <button type="button" class="@($"ta-pill {(EsMes(DateTime.Today.AddMonths(-2)) ? "activa" : "")}")" @onclick="@(() => IrAMes(DateTime.Today.AddMonths(-2)))">Hace 2 meses</button>
+        <span class="lbl ml-3">SLA:</span>
+        <button type="button" class="@($"ta-pill {(_filtro.SoloIncumplidosSla == true ? "activa" : "")}")" style="--pill:#C62828" @onclick="ToggleIncumplidos">Solo incumplidos</button>
+    </div>
+    <MudGrid Spacing="2">
         <MudItem xs="6" md="2">
             <MudSelect T="int" Value="_mes" ValueChanged="OnMesChanged" Label="Mes" Variant="Variant.Outlined" Margin="Margin.Dense">
                 @for (int m = 1; m <= 12; m++)
                 {
                     var mm = m;
-                    <MudSelectItem T="int" Value="@mm">@NombreMes(mm)</MudSelectItem>
+                    <MudSelectItem T="int" Value="@mm">@Formato.NombreMes(mm)</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
@@ -38,15 +49,15 @@
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" md="3">
+        <MudItem xs="12" sm="6" md="3">
             <MudSelect T="int?" Value="_filtro.ProveedorId" ValueChanged="OnProveedorChanged" Label="Proveedor" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
                 @foreach (var p in _proveedores)
                 {
-                    <MudSelectItem T="int?" Value="@p.ProveedorId">@p.Nombre</MudSelectItem>
+                    <MudSelectItem T="int?" Value="@((int?)p.ProveedorId)">@p.Nombre</MudSelectItem>
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" md="3">
+        <MudItem xs="12" sm="6" md="2">
             <MudSelect T="string" Value="_filtro.ResponsableInterno" ValueChanged="OnResponsableChanged" Label="Responsable" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
                 @foreach (var r in _grupo)
                 {
@@ -54,161 +65,177 @@
                 }
             </MudSelect>
         </MudItem>
-        <MudItem xs="12" md="2" Class="d-flex gap-1">
-            <MudButton Variant="Variant.Filled" Color="Color.Success"
-                                   StartIcon="@(_exportando ? null : Icons.Material.Filled.TableView)"
-                                   OnClick="ExportarExcel" Disabled="_exportando" FullWidth="true">
-                            @if (_exportando)
-                            {
-                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
-                                <span>Generando…</span>
-                            }
-                            else
-                            {
-                                <span>Excel</span>
-                            }
-                        </MudButton>
+        <MudItem xs="12" md="3">
+            <MudTextField T="string" Value="_filtro.Texto" ValueChanged="OnTextoChanged" Immediate="true" Clearable="true"
+                          Label="Buscar título o caso" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
         </MudItem>
     </MudGrid>
-</MudPaper>
+    <ActiveFilterChips Filtros="FiltrosActivos" OnQuitar="QuitarFiltro" OnLimpiarTodo="LimpiarFiltros" />
+</div>
 
-@if (_cargando)
+@if (_cargando && !_cargadoAlgunaVez)
 {
     <MudGrid Spacing="3">
-        @for (var i = 0; i < 4; i++) { <MudItem xs="6" md="3"><MudSkeleton Height="110px" /></MudItem> }
-        <MudItem xs="12"><MudSkeleton Height="360px" /></MudItem>
+        @for (var i = 0; i < 6; i++) { <MudItem xs="6" md="2"><KpiCard Cargando="true" /></MudItem> }
+        <MudItem xs="12"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="360px" Animation="Animation.Wave" /></MudItem>
     </MudGrid>
 }
 else
 {
+    <div class="@(_cargando ? "ta-actualizando" : "")" @key="_version">
     <!-- ===== KPIs ===== -->
-    <MudGrid Spacing="3" Class="mb-3">
-        <MudItem xs="6" md="2"><KpiCard Titulo="Reportes del mes" Valor="@_resumen.TotalReportes.ToString()" Icono="@Icons.Material.Filled.Assignment" Acento="azul" Nota="@($"{_resumen.Abiertos} abiertos")" /></MudItem>
-        <MudItem xs="6" md="2"><KpiCard Titulo="SLA cumplido" Valor="@_resumen.SlaCumplidos.ToString()" Icono="@Icons.Material.Filled.CheckCircle" Acento="cumplido" Nota="@($"{_resumen.PctCumplimientoSla:0.#}%")" /></MudItem>
-        <MudItem xs="6" md="2"><KpiCard Titulo="SLA incumplido" Valor="@_resumen.SlaIncumplidos.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido" OnClick="ToggleIncumplidos" /></MudItem>
-        <MudItem xs="6" md="2"><KpiCard Titulo="Sin evaluar" Valor="@_resumen.SlaSinEvaluar.ToString()" Icono="@Icons.Material.Filled.HelpOutline" Acento="riesgo" /></MudItem>
-        <MudItem xs="6" md="2"><KpiCard Titulo="Con asistencia" Valor="@_resumen.ConAsistencia.ToString()" Icono="@Icons.Material.Filled.Support" Acento="cumplido" /></MudItem>
-        <MudItem xs="6" md="2"><KpiCard Titulo="Cerrados" Valor="@_resumen.Cerrados.ToString()" Icono="@Icons.Material.Filled.TaskAlt" Acento="neutro" /></MudItem>
+    <MudGrid Spacing="3" Class="mb-1 ta-stagger">
+        <MudItem xs="6" md="4" lg="2"><KpiCard Titulo="Reportes del mes" Valor="@_resumen.TotalReportes.ToString()" Icono="@Icons.Material.Filled.Assignment" Acento="azul" Nota="@($"{_resumen.Abiertos} abiertos")" /></MudItem>
+        <MudItem xs="6" md="4" lg="2"><KpiCard Titulo="SLA cumplido" Valor="@_resumen.SlaCumplidos.ToString()" Icono="@Icons.Material.Filled.CheckCircle" Acento="cumplido" Progreso="@_resumen.PctCumplimientoSla" Nota="@($"{_resumen.PctCumplimientoSla:0.#}% de cumplimiento")" /></MudItem>
+        <MudItem xs="6" md="4" lg="2"><KpiCard Titulo="SLA incumplido" Valor="@_resumen.SlaIncumplidos.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido" Activo="@(_filtro.SoloIncumplidosSla == true)" TextoAccion="Ver incumplidos" OnClick="ToggleIncumplidos" /></MudItem>
+        <MudItem xs="6" md="4" lg="2"><KpiCard Titulo="Sin evaluar" Valor="@_resumen.SlaSinEvaluar.ToString()" Icono="@Icons.Material.Filled.HelpOutline" Acento="riesgo" Nota="falta marcar si cumplió" /></MudItem>
+        <MudItem xs="6" md="4" lg="2"><KpiCard Titulo="Con asistencia" Valor="@_resumen.ConAsistencia.ToString()" Icono="@Icons.Material.Filled.Support" Acento="cumplido" /></MudItem>
+        <MudItem xs="6" md="4" lg="2"><KpiCard Titulo="Cerrados" Valor="@_resumen.Cerrados.ToString()" Icono="@Icons.Material.Filled.TaskAlt" Acento="neutro" /></MudItem>
     </MudGrid>
 
     <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" @bind-ActivePanelIndex="_tab">
 
         <!-- ===== Matriz de control ===== -->
         <MudTabPanel Text="Matriz de control" Icon="@Icons.Material.Filled.GridView">
-            <div class="panel mb-3">
-                <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
-                    <div>
-                        <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">PERÍODO</MudText>
-                        <MudText Typo="Typo.h6">@NombreMes(_mes).ToUpper() @_anio</MudText>
-                    </div>
-                    <div>
-                        <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">PROVEEDOR</MudText>
-                        <MudText Typo="Typo.h6">@(_proveedores.FirstOrDefault(p => p.ProveedorId == _filtro.ProveedorId)?.Nombre ?? "Todos")</MudText>
-                    </div>
-                    <div class="text-center">
-                        <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">CUMPLIMIENTO</MudText>
-                        <MudText Typo="Typo.h4" Style="@($"color:{(_resumen.PctCumplimientoSla >= 90 ? "var(--op-cumplido)" : _resumen.PctCumplimientoSla >= 70 ? "var(--op-riesgo)" : "var(--op-vencido)")};font-weight:700")">@($"{_resumen.PctCumplimientoSla:0}%")</MudText>
-                    </div>
-                </div>
-
-                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="background:transparent">
-                    <thead>
-                        <tr style="background:var(--bsc-azul)">
-                            <th style="color:#fff">Severidad</th>
-                            <th style="color:#fff">SLA</th>
-                            <th style="color:#fff;text-align:center">Cantidad soportes</th>
-                            <th style="color:#fff;text-align:center">Resueltos dentro del SLA</th>
-                            <th style="color:#fff;text-align:center">Resultado</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var fila in _resumen.Control)
-                        {
-                            <tr>
-                                <td><b>@fila.Severidad</b></td>
-                                <td>@fila.SlaTexto</td>
-                                <td style="text-align:center">@(fila.CantidadSoportes == 0 ? "—" : fila.CantidadSoportes.ToString())</td>
-                                <td style="text-align:center">@(fila.CantidadSoportes == 0 ? "—" : fila.ResueltosDentroSla.ToString())</td>
-                                <td style="text-align:center">
-                                    @if (fila.CantidadSoportes > 0)
-                                    {
-                                        <MudChip T="string" Size="Size.Small" Style="@($"background:{(fila.PctCumplimiento >= 90 ? "var(--op-cumplido)" : fila.PctCumplimiento >= 70 ? "var(--op-riesgo)" : "var(--op-vencido)")};color:#fff")">@($"{fila.PctCumplimiento:0}%")</MudChip>
-                                    }
-                                    else { <span style="color:var(--texto-tenue)">—</span> }
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </MudSimpleTable>
-            </div>
-
             <MudGrid Spacing="3">
-                <MudItem xs="12" md="6">
-                    <ChartPanel Titulo="Reportes por proveedor" Icono="@Icons.Material.Filled.Business" Vacio="@(!_resumen.PorProveedor.Any())">
-                        <ApexChart TItem="ConteoProveedor" Options="@_optBarras" Height="260">
-                            <ApexPointSeries TItem="ConteoProveedor" Items="_resumen.PorProveedor" Name="Reportes" XValue="@(x => x.Etiqueta)" YValue="@(x => (decimal)x.Cantidad)" SeriesType="SeriesType.Bar" />
-                        </ApexChart>
-                    </ChartPanel>
+                <MudItem xs="12" md="3">
+                    <div class="panel d-flex flex-column align-center justify-center ta-alto-total">
+                        <MudText Typo="Typo.overline" Class="ta-tenue">@Formato.NombreMes(_mes).ToUpperInvariant() @_anio</MudText>
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">@NombreProveedorFiltrado</MudText>
+                        <GaugeRadial Valor="@_resumen.PctCumplimientoSla" Meta="100" Etiqueta="Cumplimiento"
+                                     Pie="@(_resumen.PctCumplimientoSla >= 100 ? "En cumplimiento" : "Hay casos fuera del SLA acordado")" />
+                    </div>
                 </MudItem>
-                <MudItem xs="12" md="6">
-                    <ChartPanel Titulo="Reportes por responsable" Icono="@Icons.Material.Filled.Groups" Vacio="@(!_resumen.PorResponsable.Any())">
-                        <ApexChart TItem="ConteoProveedor" Options="@_optBarrasV" Height="260">
-                            <ApexPointSeries TItem="ConteoProveedor" Items="_resumen.PorResponsable" Name="Reportes" XValue="@(x => Acortar(x.Etiqueta))" YValue="@(x => (decimal)x.Cantidad)" SeriesType="SeriesType.Bar" />
-                        </ApexChart>
-                    </ChartPanel>
+                <MudItem xs="12" md="9">
+                    <div class="panel ta-alto-total">
+                        <div class="panel-cab">
+                            <div>
+                                <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Small" Color="Color.Primary" /> Control por severidad</h2>
+                                <div class="panel-sub">Mismo cálculo de la matriz oficial: resueltos dentro del SLA de cada severidad</div>
+                            </div>
+                        </div>
+                        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="background:transparent">
+                            <thead>
+                                <tr>
+                                    <th>Severidad</th>
+                                    <th>SLA</th>
+                                    <th style="text-align:center">Soportes</th>
+                                    <th style="text-align:center">Dentro del SLA</th>
+                                    <th style="width:34%">Resultado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var fila in _resumen.Control)
+                                {
+                                    <tr>
+                                        <td><span class="@($"ta-tag {SevClase(fila.Severidad)}")">@fila.Severidad</span></td>
+                                        <td>@fila.SlaTexto</td>
+                                        <td style="text-align:center">@(fila.CantidadSoportes == 0 ? "—" : fila.CantidadSoportes.ToString())</td>
+                                        <td style="text-align:center">@(fila.CantidadSoportes == 0 ? "—" : fila.ResueltosDentroSla.ToString())</td>
+                                        <td>
+                                            @if (fila.CantidadSoportes > 0)
+                                            {
+                                                <div class="d-flex align-center gap-2">
+                                                    <div class="kpi-prog" style="@($"flex:1;--kpi-color:{ColorPct(fila.PctCumplimiento)}")">
+                                                        <span style="@($"--w:{Math.Min(100, fila.PctCumplimiento).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}%")"></span>
+                                                    </div>
+                                                    <b style="@($"color:{ColorPct(fila.PctCumplimiento)};min-width:42px;text-align:right")">@($"{fila.PctCumplimiento:0}%")</b>
+                                                </div>
+                                            }
+                                            else { <span class="ta-tenue">Sin casos</span> }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    </div>
+                </MudItem>
+
+                <MudItem xs="12" md="7">
+                    <div class="panel ta-alto-total">
+                        <div class="panel-cab">
+                            <div>
+                                <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.StackedBarChart" Size="Size.Small" Color="Color.Primary" /> Cumplimiento de SLA por proveedor</h2>
+                                <div class="panel-sub">Cada barra suma 100% · el porcentaje de la derecha es lo que cumplió el SLA</div>
+                            </div>
+                            @if (_filtro.ProveedorId.HasValue)
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FilterAltOff" OnClick="@(() => OnProveedorChanged(null))">Ver todos</MudButton>
+                            }
+                        </div>
+                        <StackedBar100 Filas="_filasProveedor" Seleccionado="@_filtro.ProveedorId?.ToString()" Meta="100"
+                                       Unidad="reporte" UnidadPlural="reportes"
+                                       OnSeleccionar="@(f => OnProveedorChanged(int.TryParse(f.Clave, out var id) && _filtro.ProveedorId != id ? id : null))"
+                                       MensajeVacio="@($"Sin reportes a proveedores en {Formato.NombreMes(_mes).ToLowerInvariant()} {_anio}.")" />
+                    </div>
+                </MudItem>
+                <MudItem xs="12" md="5">
+                    <div class="panel ta-alto-total">
+                        <div class="panel-cab">
+                            <div>
+                                <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.Groups" Size="Size.Small" Color="Color.Primary" /> Reportes por responsable</h2>
+                                <div class="panel-sub">Clic en un responsable para filtrar</div>
+                            </div>
+                        </div>
+                        <BarList Items="@_resumen.PorResponsable.Select(x => new BarList.Item(x.Etiqueta, Formato.NombreCorto(x.Etiqueta), x.Cantidad, Formato.ColorAvatar(x.Etiqueta))).ToList()"
+                                 Seleccionado="@_filtro.ResponsableInterno"
+                                 OnSeleccionar="@(i => OnResponsableChanged(_filtro.ResponsableInterno == i.Clave ? null : i.Clave))"
+                                 MensajeVacio="Sin reportes en el período." />
+                    </div>
                 </MudItem>
             </MudGrid>
         </MudTabPanel>
 
         <!-- ===== Detalles ===== -->
-        <MudTabPanel Text="Detalles" Icon="@Icons.Material.Filled.List">
-            <div class="panel">
-                <div class="d-flex justify-space-between align-center mb-2 flex-wrap gap-2">
-                    <h2 class="panel-titulo mb-0"><MudIcon Icon="@Icons.Material.Filled.GridOn" Size="Size.Small" Color="Color.Primary" /> Casos de @NombreMes(_mes) @_anio</h2>
-                    <MudTextField @bind-Value="_filtro.Texto" Placeholder="Buscar título, caso…" Variant="Variant.Outlined" Margin="Margin.Dense"
-                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Style="max-width:300px"
-                                  OnKeyUp="@(async e => { if (e.Key == "Enter") await Recargar(); })" />
+        <MudTabPanel Text="Detalles" Icon="@Icons.Material.Filled.List" BadgeData="@(_reportes.Count > 0 ? _reportes.Count : null)" BadgeColor="Color.Primary">
+            <div class="panel pa-0">
+                <div class="d-flex justify-space-between align-center pa-4 pb-2 flex-wrap gap-2">
+                    <span class="ta-resumen-pag"><b>@_reportes.Count</b> casos de @Formato.NombreMes(_mes).ToLowerInvariant() @_anio · clic en una fila para editarla</span>
                 </div>
-
                 @if (!_reportes.Any())
                 {
-                    <EmptyState Icono="@Icons.Material.Filled.Inbox" Mensaje="@($"Sin reportes en {NombreMes(_mes)} {_anio}.")" TextoAccion="Registrar reporte" OnAccion="@(() => AbrirReporte(null))" />
+                    <EmptyState Icono="@Icons.Material.Filled.Inbox" Mensaje="@($"Sin reportes en {Formato.NombreMes(_mes).ToLowerInvariant()} {_anio}.")"
+                                TextoAccion="Registrar reporte" OnAccion="@(() => AbrirReporte(null))" />
                 }
                 else
                 {
-                    <MudTable Items="_reportes" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md">
+                    <MudTable Items="_reportes" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" Class="ta-tabla-click" T="ReporteProveedorMatrizDto"
+                              OnRowClick="@((TableRowClickEventArgs<ReporteProveedorMatrizDto> a) => AbrirReporte(a.Item!))">
                         <HeaderContent>
-                            <MudTh>Ticket sist.</MudTh><MudTh>Caso prov.</MudTh><MudTh>Título</MudTh><MudTh>Proveedor</MudTh><MudTh>Responsable</MudTh>
-                            <MudTh>Fecha</MudTh><MudTh>Sever.</MudTh><MudTh>SLA ref.</MudTh><MudTh>Cumplió</MudTh><MudTh>Asist.</MudTh><MudTh>Estado</MudTh><MudTh></MudTh>
+                            <MudTh>Ticket</MudTh><MudTh>Caso prov.</MudTh><MudTh>Título</MudTh><MudTh>Proveedor</MudTh><MudTh>Responsable</MudTh>
+                            <MudTh>Fecha</MudTh><MudTh>Severidad</MudTh><MudTh>SLA ref.</MudTh><MudTh>Cumplió</MudTh><MudTh>Asist.</MudTh><MudTh>Estado</MudTh><MudTh></MudTh>
                         </HeaderContent>
                         <RowTemplate>
-                            <MudTd DataLabel="Ticket sist.">@(string.IsNullOrEmpty(context.RefNumSistema) ? "—" : context.RefNumSistema)</MudTd>
+                            <MudTd DataLabel="Ticket"><b>@(string.IsNullOrEmpty(context.RefNumSistema) ? "—" : context.RefNumSistema)</b></MudTd>
                             <MudTd DataLabel="Caso prov.">@(context.NumeroCasoExterno ?? "—")</MudTd>
-                            <MudTd DataLabel="Título" Style="max-width:200px"><MudTooltip Text="@context.Descripcion">@context.Titulo</MudTooltip></MudTd>
+                            <MudTd DataLabel="Título" Style="max-width:220px"><span title="@context.Descripcion">@Formato.Corto(context.Titulo, 50)</span></MudTd>
                             <MudTd DataLabel="Proveedor">@context.Proveedor</MudTd>
                             <MudTd DataLabel="Responsable">@(context.ResponsableInterno ?? "—")</MudTd>
                             <MudTd DataLabel="Fecha">@context.FechaReporte.ToString("dd/MM/yyyy")</MudTd>
-                            <MudTd DataLabel="Sever."><MudChip T="string" Size="Size.Small" Color="@SevColor(context.Urgencia)" Variant="Variant.Text">@context.Urgencia</MudChip></MudTd>
+                            <MudTd DataLabel="Severidad"><span class="@($"ta-tag {SevClase(context.Urgencia)}")">@context.Urgencia</span></MudTd>
                             <MudTd DataLabel="SLA ref.">@SlaRefTexto(context.SlaReferenciaHoras)</MudTd>
                             <MudTd DataLabel="Cumplió">
-                                @if (context.CumplioSla == true) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-cumplido);color:#fff">Sí</MudChip> }
-                                else if (context.CumplioSla == false) { <MudChip T="string" Size="Size.Small" Style="background:var(--op-vencido);color:#fff">No</MudChip> }
-                                else { <span style="color:var(--texto-tenue)">—</span> }
+                                @if (context.CumplioSla == true) { <span class="ta-tag ok">Sí</span> }
+                                else if (context.CumplioSla == false) { <span class="ta-tag err">No</span> }
+                                else { <span class="ta-tag warn">Sin evaluar</span> }
                             </MudTd>
                             <MudTd DataLabel="Asist.">
                                 @if (context.BrindoAsistencia == true) { <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" /> }
                                 else if (context.BrindoAsistencia == false) { <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="Color.Error" Size="Size.Small" /> }
-                                else { <span>—</span> }
+                                else { <span class="ta-tenue">—</span> }
                             </MudTd>
-                            <MudTd DataLabel="Estado"><MudChip T="string" Size="Size.Small" Variant="Variant.Text">@context.EstadoTexto</MudChip></MudTd>
+                            <MudTd DataLabel="Estado"><span class="ta-tag">@context.EstadoTexto</span></MudTd>
                             <MudTd>
-                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
-                                    <MudMenuItem Icon="@Icons.Material.Filled.Edit" OnClick="@(() => AbrirReporte(context))">Editar</MudMenuItem>
-                                    <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="@(() => Eliminar(context))">Eliminar</MudMenuItem>
-                                </MudMenu>
+                                <div @onclick:stopPropagation="true">
+                                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Acciones del reporte">
+                                        <MudMenuItem Icon="@Icons.Material.Filled.Edit" OnClick="@(() => AbrirReporte(context))">Editar</MudMenuItem>
+                                        <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="@(() => Eliminar(context))">Eliminar</MudMenuItem>
+                                    </MudMenu>
+                                </div>
                             </MudTd>
                         </RowTemplate>
-                        <PagerContent><MudTablePager PageSizeOptions="new[]{25,50,100}" /></PagerContent>
+                        <PagerContent><MudTablePager PageSizeOptions="new[]{25,50,100}" RowsPerPageString="Filas por página" InfoFormat="{first_item}–{last_item} de {all_items}" /></PagerContent>
                     </MudTable>
                 }
             </div>
@@ -216,12 +243,13 @@ else
 
         <!-- ===== Catálogo de proveedores ===== -->
         <MudTabPanel Text="Catálogo y SLA" Icon="@Icons.Material.Filled.Business">
-            <div class="panel">
-                <div class="d-flex justify-space-between align-center mb-2">
-                    <h2 class="panel-titulo mb-0"><MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Small" Color="Color.Primary" /> Proveedores y su SLA</h2>
+            <div class="panel pa-0">
+                <div class="d-flex justify-space-between align-center pa-4 pb-2 flex-wrap gap-2">
+                    <span class="ta-resumen-pag"><b>@_proveedores.Count(p => p.Activo)</b> proveedores activos · SLA de respuesta por severidad</span>
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => AbrirProveedor(null))">Nuevo proveedor</MudButton>
                 </div>
-                <MudTable Items="_proveedores" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md">
+                <MudTable Items="_proveedores" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" Class="ta-tabla-click" T="ProveedorCatalogoDto"
+                          OnRowClick="@((TableRowClickEventArgs<ProveedorCatalogoDto> a) => AbrirProveedor(a.Item!))">
                     <HeaderContent>
                         <MudTh>Proveedor</MudTh><MudTh>Contacto</MudTh><MudTh>Email</MudTh><MudTh>Teléfono</MudTh>
                         <MudTh>Crítico</MudTh><MudTh>Alto</MudTh><MudTh>Medio</MudTh><MudTh>Bajo</MudTh><MudTh>Activo</MudTh><MudTh></MudTh>
@@ -236,25 +264,33 @@ else
                         <MudTd DataLabel="Medio">@SlaRefTexto(context.SlaMedioHoras)</MudTd>
                         <MudTd DataLabel="Bajo">@SlaRefTexto(context.SlaBajoHoras)</MudTd>
                         <MudTd DataLabel="Activo">
-                            @if (context.Activo) { <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" /> }
-                            else { <MudIcon Icon="@Icons.Material.Filled.Block" Color="Color.Error" Size="Size.Small" /> }
+                            @if (context.Activo) { <span class="ta-tag ok">Activo</span> }
+                            else { <span class="ta-tag">Inactivo</span> }
                         </MudTd>
                         <MudTd>
-                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true">
-                                <MudMenuItem Icon="@Icons.Material.Filled.Edit" OnClick="@(() => AbrirProveedor(context))">Editar</MudMenuItem>
-                                <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="@(() => EliminarProveedor(context))">Eliminar</MudMenuItem>
-                            </MudMenu>
+                            <div @onclick:stopPropagation="true">
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Acciones del proveedor">
+                                    <MudMenuItem Icon="@Icons.Material.Filled.Edit" OnClick="@(() => AbrirProveedor(context))">Editar</MudMenuItem>
+                                    <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="@(() => EliminarProveedor(context))">Eliminar</MudMenuItem>
+                                </MudMenu>
+                            </div>
                         </MudTd>
                     </RowTemplate>
                 </MudTable>
             </div>
         </MudTabPanel>
     </MudTabs>
+    </div>
 }
 
 @code {
     private int _tab;
     private bool _cargando = true;
+    private bool _cargadoAlgunaVez;
+    private bool _exportando;
+    private int _version;
+    private DateTime? _ultimaCarga;
+    private Timer? _debounce;
     private int _mes = DateTime.Today.Month;
     private int _anio = DateTime.Today.Year;
     private ReporteProveedorFiltro _filtro = new() { Mes = DateTime.Today.Month, Anio = DateTime.Today.Year };
@@ -263,60 +299,115 @@ else
     private MatrizProveedorResumenDto _resumen = new();
     private List<ProveedorCatalogoDto> _proveedores = new();
     private List<string> _grupo = new();
-
-    private ApexChartOptions<ConteoProveedor> _optBarras = new()
-    {
-        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
-        Colors = new() { "#15528E" },
-        PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } },
-        DataLabels = new ApexCharts.DataLabels { Enabled = false }
-    };
-    private ApexChartOptions<ConteoProveedor> _optBarrasV = new()
-    {
-        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
-        Colors = new() { "#76B82A" },
-        DataLabels = new ApexCharts.DataLabels { Enabled = false }
-    };
-
-    private bool _debeRenderizar = true;
-    protected override bool ShouldRender()
-    {
-        if (_debeRenderizar) { _debeRenderizar = false; return true; }
-        return false;
-    }
-    private void Render() { _debeRenderizar = true; StateHasChanged(); }
+    private List<StackedBar100.Fila> _filasProveedor = new();
 
     protected override async Task OnInitializedAsync()
     {
-        _proveedores = await Api.CatalogoProveedoresAsync();
-        _grupo = await Api.GrupoAnalistasAsync();
+        try
+        {
+            var tProv = Api.CatalogoProveedoresAsync();
+            var tGrupo = Api.GrupoAnalistasAsync();
+            await Task.WhenAll(tProv, tGrupo);
+            _proveedores = tProv.Result;
+            _grupo = tGrupo.Result;
+        }
+        catch (Exception ex) { Snackbar.Add($"No se pudieron cargar los catálogos: {ex.Message}", Severity.Warning); }
         await Recargar();
     }
 
-    private string NombreMes(int m) => new System.Globalization.CultureInfo("es-DO").DateTimeFormat.GetMonthName(m);
+    private string NombreProveedorFiltrado
+        => _proveedores.FirstOrDefault(p => p.ProveedorId == _filtro.ProveedorId)?.Nombre ?? "Todos los proveedores";
 
     private async Task Recargar()
     {
-        _cargando = true; Render();
+        _cargando = true;
+        StateHasChanged();
         try
         {
             _filtro.Mes = _mes; _filtro.Anio = _anio;
+            // La barra apilada compara proveedores: se calcula sobre el mes sin filtrar por proveedor,
+            // para que al elegir uno siga viéndose contra los demás.
+            var filtroComparativo = new ReporteProveedorFiltro
+            {
+                Mes = _mes, Anio = _anio, ResponsableInterno = _filtro.ResponsableInterno, Texto = _filtro.Texto
+            };
             var tRep = Api.MatrizBuscarAsync(_filtro);
             var tRes = Api.MatrizResumenAsync(_filtro);
-            await Task.WhenAll(tRep, tRes);
+            var tComp = Api.MatrizBuscarAsync(filtroComparativo);
+            await Task.WhenAll(tRep, tRes, tComp);
             _reportes = tRep.Result;
             _resumen = tRes.Result;
+            _filasProveedor = tComp.Result
+                .GroupBy(r => new { r.ProveedorId, r.Proveedor })
+                .OrderByDescending(g => g.Count())
+                .Select(g => new StackedBar100.Fila(g.Key.ProveedorId.ToString(), g.Key.Proveedor, new()
+                {
+                    new("Cumplió SLA", g.Count(r => r.CumplioSla == true), "var(--op-cumplido)"),
+                    new("No cumplió", g.Count(r => r.CumplioSla == false), "var(--op-vencido)"),
+                    new("Sin evaluar", g.Count(r => r.CumplioSla is null), "#B0BEC5")
+                })).ToList();
+            _ultimaCarga = DateTime.Now;
+            _cargadoAlgunaVez = true;
+            _version++;
         }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
         catch (Exception ex) { Snackbar.Add($"Error al cargar: {ex.Message}", Severity.Error); }
-        finally { _cargando = false; Render(); }
+        finally { _cargando = false; StateHasChanged(); }
     }
 
+    // ===== Filtros =====
+    private bool EsMes(DateTime f) => _mes == f.Month && _anio == f.Year;
+    private async Task IrAMes(DateTime f) { _mes = f.Month; _anio = f.Year; await Recargar(); }
     private async Task OnMesChanged(int m) { _mes = m; await Recargar(); }
     private async Task OnAnioChanged(int a) { _anio = a; await Recargar(); }
     private async Task OnProveedorChanged(int? p) { _filtro.ProveedorId = p; await Recargar(); }
     private async Task OnResponsableChanged(string? r) { _filtro.ResponsableInterno = r; await Recargar(); }
-    private async Task ToggleIncumplidos() { _filtro.SoloIncumplidosSla = _filtro.SoloIncumplidosSla == true ? null : true; _tab = 1; await Recargar(); }
+    private async Task ToggleIncumplidos()
+    {
+        _filtro.SoloIncumplidosSla = _filtro.SoloIncumplidosSla == true ? null : true;
+        if (_filtro.SoloIncumplidosSla == true) _tab = 1;
+        await Recargar();
+    }
 
+    private void OnTextoChanged(string? t)
+    {
+        _filtro.Texto = t;
+        _debounce?.Dispose();
+        _debounce = new Timer(_ => InvokeAsync(Recargar), null, 400, Timeout.Infinite);
+    }
+
+    private List<ActiveFilterChips.FiltroActivo> FiltrosActivos
+    {
+        get
+        {
+            var l = new List<ActiveFilterChips.FiltroActivo>();
+            if (_filtro.ProveedorId.HasValue) l.Add(new("proveedor", $"Proveedor: {NombreProveedorFiltrado}"));
+            if (!string.IsNullOrWhiteSpace(_filtro.ResponsableInterno)) l.Add(new("responsable", $"Responsable: {_filtro.ResponsableInterno}"));
+            if (_filtro.SoloIncumplidosSla == true) l.Add(new("incumplidos", "Solo SLA incumplido"));
+            if (!string.IsNullOrWhiteSpace(_filtro.Texto)) l.Add(new("texto", $"\"{_filtro.Texto}\""));
+            return l;
+        }
+    }
+
+    private async Task QuitarFiltro(ActiveFilterChips.FiltroActivo f)
+    {
+        switch (f.Clave)
+        {
+            case "proveedor": _filtro.ProveedorId = null; break;
+            case "responsable": _filtro.ResponsableInterno = null; break;
+            case "incumplidos": _filtro.SoloIncumplidosSla = null; break;
+            case "texto": _filtro.Texto = null; break;
+        }
+        await Recargar();
+    }
+
+    private async Task LimpiarFiltros()
+    {
+        _filtro = new ReporteProveedorFiltro { Mes = _mes, Anio = _anio };
+        await Recargar();
+    }
+
+    // ===== Acciones =====
     private async Task AbrirReporte(ReporteProveedorMatrizDto? existente)
     {
         var p = new DialogParameters
@@ -327,74 +418,62 @@ else
             ["Usuario"] = ""
         };
         var d = await DialogService.ShowAsync<ReporteProveedorDialog>(existente is null ? "Registrar reporte" : "Editar reporte", p,
-            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
         var res = await d.Result;
-        if (!res.Canceled) await Recargar();
+        if (res is { Canceled: false }) await Recargar();
     }
 
     private async Task AbrirProveedor(ProveedorCatalogoDto? existente)
     {
         var p = new DialogParameters { ["Existente"] = existente };
         var d = await DialogService.ShowAsync<ProveedorCatalogoDialog>(existente is null ? "Nuevo proveedor" : "Editar proveedor", p,
-            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
         var res = await d.Result;
-        if (!res.Canceled) { _proveedores = await Api.CatalogoProveedoresAsync(); Render(); }
+        if (res is { Canceled: false }) _proveedores = await Api.CatalogoProveedoresAsync();
     }
 
     private async Task Eliminar(ReporteProveedorMatrizDto r)
     {
         var ok = await DialogService.ShowMessageBox("Eliminar reporte", $"¿Eliminar el reporte de {r.Proveedor}?", yesText: "Eliminar", cancelText: "Cancelar");
-        if (ok == true)
-        {
-            try { await Api.MatrizEliminarAsync(r.ReporteId); Snackbar.Add("Eliminado", Severity.Success); await Recargar(); }
-            catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
-        }
+        if (ok != true) return;
+        try { await Api.MatrizEliminarAsync(r.ReporteId); Snackbar.Add("Reporte eliminado", Severity.Success); await Recargar(); }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
     }
 
     private async Task EliminarProveedor(ProveedorCatalogoDto p)
     {
         var ok = await DialogService.ShowMessageBox("Eliminar proveedor", $"¿Eliminar {p.Nombre}? Si tiene reportes, se desactivará en vez de borrarse.", yesText: "Aceptar", cancelText: "Cancelar");
-        if (ok == true)
-        {
-            try { await Api.CatalogoEliminarAsync(p.ProveedorId); _proveedores = await Api.CatalogoProveedoresAsync(); Render(); }
-            catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
-        }
+        if (ok != true) return;
+        try { await Api.CatalogoEliminarAsync(p.ProveedorId); _proveedores = await Api.CatalogoProveedoresAsync(); }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
     }
-
-    private bool _exportando;
 
     private async Task ExportarExcel()
     {
         if (_exportando) return;                       // anti doble clic
-        if (!_reportes.Any()) { Snackbar.Add("No hay reportes para exportar", Severity.Info); return; }
+        if (!_reportes.Any()) { Snackbar.Add("No hay reportes para exportar en este período.", Severity.Info); return; }
 
         _exportando = true;
         try
         {
             // El backend genera el Excel respetando los filtros visibles.
             var bytes = await Api.MatrizExcelBytesAsync(_filtro);
-            var nombre = $"Matriz_Cumplimiento_{Capitalizar(NombreMes(_mes))}_{_anio}.xlsx";
+            var nombre = $"Matriz_Cumplimiento_{Formato.NombreMes(_mes)}_{_anio}.xlsx";
             await Descargas.DescargarExcelAsync(nombre, bytes);
             Snackbar.Add($"Excel generado con {_reportes.Count} casos", Severity.Success);
         }
-        catch (ApiException ex)
-        {
-            Snackbar.Add(ex.MensajeUsuario, Severity.Error);
-        }
-        catch (Exception)
-        {
-            Snackbar.Add("No pudimos generar el Excel. Intenta de nuevo.", Severity.Error);
-        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception) { Snackbar.Add("No pudimos generar el Excel. Intenta de nuevo.", Severity.Error); }
         finally { _exportando = false; }
     }
 
-    private static string Capitalizar(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
-
-    private static string Acortar(string n) { var p = n.Split(' ', StringSplitOptions.RemoveEmptyEntries); return p.Length >= 2 ? $"{p[0]} {p[^1]}" : n; }
-    private static Color SevColor(string s) => s?.ToLowerInvariant() switch { "critico" => Color.Error, "alto" => Color.Warning, "medio" => Color.Info, _ => Color.Default };
+    private static string ColorPct(double p) => p >= 100 ? "var(--op-cumplido)" : p >= 70 ? "var(--op-riesgo)" : "var(--op-vencido)";
+    private static string SevClase(string? s) => s?.ToLowerInvariant() switch { "critico" or "crítico" => "err", "alto" => "warn", "medio" => "info", _ => "" };
     private static string SlaRefTexto(int? horas)
     {
         if (!horas.HasValue) return "—";
-        return horas.Value % 24 == 0 && horas.Value >= 24 ? $"{horas.Value / 24}D" : $"{horas.Value}h";
+        return horas.Value % 24 == 0 && horas.Value >= 24 ? $"{horas.Value / 24} días" : $"{horas.Value} h";
     }
+
+    public void Dispose() => _debounce?.Dispose();
 }

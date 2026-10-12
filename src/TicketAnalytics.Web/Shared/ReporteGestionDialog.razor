@@ -4,7 +4,7 @@
 
 <MudDialog>
     <DialogContent>
-        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" @bind-ActivePanelIndex="_tab">
 
             <!-- ===== PROVEEDOR ===== -->
             <MudTabPanel Text="Proveedor" Icon="@Icons.Material.Filled.Business">
@@ -305,9 +305,16 @@
                         }
                     </div>
 
-                    <MudTextField @bind-Value="_notaVP" Label="Nota ejecutiva" Variant="Variant.Outlined"
-                                  Lines="3" Margin="Margin.Dense" Immediate="true"
-                                  HelperText="Este texto es el que se lee en la reunión con el VP" />
+                    <div class="d-flex justify-space-between align-center mb-1">
+                        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Nota ejecutiva</MudText>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.AutoFixHigh" OnClick="RellenarNotaVP" Disabled="_generandoNota">
+                            @(_generandoNota ? "Armando…" : "Completar con el contexto del caso")
+                        </MudButton>
+                    </div>
+                    <MudTextField @bind-Value="_notaVP" Variant="Variant.Outlined"
+                                  Lines="5" Margin="Margin.Dense" Immediate="true"
+                                  HelperText="Es el texto que se lee en la reunión con el VP. Se arma con ticket, sistema, categoría, asignatario, gestión, tipo de solución, JIRA y causa raíz." />
 
                     @* Previsualización de cómo se verá en el reporte *@
                     <MudText Typo="Typo.caption" Class="mt-3" Style="color:var(--texto-secundario)">
@@ -362,6 +369,16 @@
     [Parameter] public bool EsOrdenCambio { get; set; }
     [Parameter] public string? OrdenCambioRef { get; set; }
 
+    /// <summary>Pestaña inicial: 0 Proveedor, 1 JIRA, 2 Avance, 3 Clasificación, 4 Reporte VP.</summary>
+    [Parameter] public int TabInicial { get; set; }
+    /// <summary>Si es true, el caso se marca para el reporte del VP al abrir (acción rápida "Agregar al VP").</summary>
+    [Parameter] public bool IncluirEnVP { get; set; }
+    /// <summary>Datos del ticket desde MDB (si ya se tienen) para armar la nota del VP sin otra consulta.</summary>
+    [Parameter] public TicketEnriquecidoDto? Contexto { get; set; }
+
+    private int _tab;
+    private bool _generandoNota;
+
     [Parameter] public List<ProveedorCatalogoDto> Proveedores { get; set; } = new();
     [Parameter] public List<string> Grupo { get; set; } = new();
 
@@ -405,6 +422,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _tab = TabInicial;
         // Catálogos base del diálogo (proveedores y analistas del grupo)
         if (!Proveedores.Any())
         {
@@ -450,9 +468,19 @@
                 _notaVP = seg.NotaReporteVP;
                 if (seg.PeriodoReporteVP is { } per) _periodoVP = $"{per.Year:0000}-{per.Month:00}";
                 _tieneJira = seg.Jiras.Any();
+                // Antes la etapa arrancaba siempre en 1 y cada gestión la devolvía a "Pendiente de análisis".
+                if (seg.EtapaActual > 0) _nuevaEtapa = seg.EtapaActual;
+                if (!string.IsNullOrWhiteSpace(seg.TecnicoResponsable) && Grupo.Contains(seg.TecnicoResponsable))
+                    _autor = seg.TecnicoResponsable;
             }
         }
         catch { /* si falla, se trata como gestión nueva */ }
+
+        if (IncluirEnVP && !_vaReporteVP)
+        {
+            _vaReporteVP = true;
+            if (string.IsNullOrWhiteSpace(_notaVP)) await RellenarNotaVP();
+        }
     }
 
     /// <summary>True si el caso ya tenía gestión: cambia el texto del botón.</summary>
@@ -509,8 +537,6 @@
     private string? _respuesta;
     // Ciclo de vida del reporte al proveedor (EstadoReporteProveedor)
     private int _estadoProveedor = 1;
-    // Etapa del seguimiento interno (EtapaSeguimiento) — concepto DISTINTO
-    private int _nuevaEtapaSeguimiento;
     private string? _donde;
     private bool? _brindoAsistencia;
     private bool? _entregoCambio;
@@ -556,7 +582,10 @@
     private void OnProveedorChanged(int id) { _proveedorId = id; StateHasChanged(); }
     private void OnSeveridadChanged(string s) { _severidad = s; StateHasChanged(); }
 
-    private async Task Guardar()
+    private async Task Guardar() => await GuardarInterno();
+
+    /// <summary>Guarda la gestión. Devuelve true solo si el backend la aceptó.</summary>
+    private async Task<bool> GuardarInterno()
     {
         // Se puede registrar una gestión PARCIAL: basta con llenar una sección.
         // Estos avisos informan de datos incompletos, pero no bloquean el guardado.
@@ -577,7 +606,7 @@
                 TipoCaso = EsOrdenCambio ? "Orden de Cambio" : null,
                 Usuario = _autor,
                 TecnicoResponsable = _autor,
-                NuevaEtapa = _nuevaEtapaSeguimiento > 0 ? _nuevaEtapaSeguimiento : _nuevaEtapa,
+                NuevaEtapa = _nuevaEtapa,
                 ProximosPasos = _proximosPasos,
 
                 // Clasificación estructurada
@@ -644,26 +673,77 @@
                 foreach (var m in res.Mensajes) Snackbar.Add(m, Severity.Info);
 
             MudDialog.Close(DialogResult.Ok(true));
+            return true;
         }
         catch (ApiException ex)
         {
             Snackbar.Add(ex.MensajeUsuario, Severity.Error);
             _guardando = false;
+            return false;
         }
         catch (Exception)
         {
             Snackbar.Add("No pudimos guardar la gestión. Intenta de nuevo.", Severity.Error);
             _guardando = false;
+            return false;
         }
     }
 
-    /// <summary>Guarda la gestión y navega al Reporte VP con el caso ya incluido.</summary>
+    /// <summary>
+    /// Guarda la gestión con el caso incluido en el Reporte VP, llevando el contexto completo
+    /// (ticket, sistema, categoría, asignatario, gestión, solución, JIRA, causa raíz) en la nota,
+    /// y navega al reporte. Si el guardado falla, se queda en el formulario para corregir.
+    /// </summary>
     private async Task GuardarYRegistrarVP()
     {
         _vaReporteVP = true;                 // el caso va al reporte
         if (_estadoVP == 0 && _tipoSolucion == 4) _estadoVP = 4;   // "Solucionado" => Completado
-        await Guardar();
-        Nav.NavigateTo($"/reporte-vp?periodo={_periodoVP}", forceLoad: false);
+        if (string.IsNullOrWhiteSpace(_notaVP)) await RellenarNotaVP();
+        if (await GuardarInterno())
+            Nav.NavigateTo($"/reporte-vp?periodo={_periodoVP}", forceLoad: false);
+    }
+
+    /// <summary>Arma la nota ejecutiva del VP con todo el contexto disponible del caso.</summary>
+    private async Task RellenarNotaVP()
+    {
+        _generandoNota = true;
+        try
+        {
+            var t = Contexto;
+            if (t is null && !EsOrdenCambio)
+            {
+                try { t = await Api.ObtenerTicketAsync(RefNum); } catch { /* seguimos con lo que hay */ }
+            }
+
+            var partes = new List<string>();
+            var cabecera = EsOrdenCambio ? $"OC {RefNum}" : $"Ticket {RefNum}";
+            if (!string.IsNullOrWhiteSpace(t?.Categoria)) cabecera += $" · {Formato.CategoriaCorta(t!.Categoria)}";
+            partes.Add(cabecera + ".");
+
+            var sistema = _sistemas.FirstOrDefault(x => x.Valor == _sistema)?.Nombre;
+            if (_sistema > 0 && !string.IsNullOrWhiteSpace(sistema)) partes.Add($"Sistema: {sistema}.");
+            var asignatario = t?.Asignatario ?? _seguimiento?.TecnicoResponsable ?? (string.IsNullOrWhiteSpace(_autor) ? null : _autor);
+            if (!string.IsNullOrWhiteSpace(asignatario)) partes.Add($"Asignatario: {asignatario}.");
+
+            var gestion = !string.IsNullOrWhiteSpace(_avance) ? _avance : _seguimiento?.ProximosPasos;
+            if (!string.IsNullOrWhiteSpace(gestion)) partes.Add($"Gestión realizada: {gestion!.Trim().TrimEnd('.')}.");
+
+            var solucion = _tiposSolucion.FirstOrDefault(x => x.Valor == _tipoSolucion)?.Nombre;
+            if (_tipoSolucion > 0 && !string.IsNullOrWhiteSpace(solucion)) partes.Add($"Tipo de solución: {solucion}.");
+
+            var jiras = JirasRegistrados.Select(j => j.ClaveJira).ToList();
+            if (!string.IsNullOrWhiteSpace(_claveJira) && !jiras.Contains(_claveJira!)) jiras.Add(_claveJira!);
+            if (jiras.Any()) partes.Add($"JIRA: {string.Join(", ", jiras)}.");
+
+            if (ProveedorYaRegistrado is { } rp) partes.Add($"Reportado a {rp.Proveedor} ({rp.EstadoTexto.ToLowerInvariant()}).");
+            else if (_reportadoProveedor == 1 && ProvSel is not null) partes.Add($"Reportado a {ProvSel.Nombre}.");
+
+            if (!string.IsNullOrWhiteSpace(_causaRaiz)) partes.Add($"Causa raíz: {_causaRaiz!.Trim().TrimEnd('.')}.");
+            if (!string.IsNullOrWhiteSpace(_proximosPasos)) partes.Add($"Próximos pasos: {_proximosPasos!.Trim().TrimEnd('.')}.");
+
+            _notaVP = string.Join(" ", partes);
+        }
+        finally { _generandoNota = false; }
     }
 
     private static int IndiceTipoAvance(string tipo)

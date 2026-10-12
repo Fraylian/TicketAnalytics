@@ -1,5 +1,5 @@
 @* Estado vacío reutilizable con icono, mensaje y acción opcional. *@
-<div class="vacio">
+<div class="vacio ta-fade">
     <MudIcon Icon="@Icono" Size="Size.Large" Class="vacio-icono" Style="@($"color:{ColorIcono}")" />
     <MudText Typo="Typo.body1">@Mensaje</MudText>
     @if (!string.IsNullOrEmpty(Detalle))

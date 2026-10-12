@@ -4,24 +4,18 @@
 @inject TicketAnalyticsApi Api
 @implements IDisposable
 
-<MudPaper Elevation="0" Class="pa-3 mb-4"
-          Style="border:1px solid var(--bsc-borde);border-radius:var(--radius-md)">
+<div class="ta-filtros">
 
     @* --- Atajos de período: lo que más se usa, a un clic --- *@
-    <div class="d-flex gap-2 mb-3 flex-wrap align-center">
-        <MudText Typo="Typo.caption" Style="color:var(--texto-secundario);min-width:52px">Período:</MudText>
+    <div class="ta-pills fila-pills">
+        <span class="lbl">Período:</span>
         @foreach (var p in Periodos)
         {
-            <MudChip T="string" Size="Size.Small" OnClick="@(() => AplicarPeriodo(p.Clave))"
-                     Style="@(_periodo == p.Clave
-                              ? "background:var(--bsc-azul);color:#fff;cursor:pointer;font-weight:600"
-                              : "background:transparent;color:var(--bsc-azul);border:1px solid var(--bsc-borde-fuerte);cursor:pointer")">
-                @p.Texto
-            </MudChip>
+            <button type="button" class="@($"ta-pill {(_periodo == p.Clave ? "activa" : "")}")" @onclick="@(() => AplicarPeriodo(p.Clave))">@p.Texto</button>
         }
     </div>
 
-    <MudGrid Spacing="2" AlignItems="Center">
+    <MudGrid Spacing="2">
         @* --- Fechas: siempre presentes --- *@
         <MudItem xs="12" sm="6" md="3">
             <MudDatePicker Label="Desde" Date="Filtro.FechaDesde" DateChanged="OnDesdeChanged"
@@ -186,7 +180,7 @@
     @if (Activos.Any())
     {
         <MudDivider Class="my-2" />
-        <div class="ta-filtros-activos">
+        <div class="ta-filtros-activos ta-fade">
             <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
                 @Activos.Count @(Activos.Count == 1 ? "filtro activo" : "filtros activos")
             </MudText>
@@ -201,7 +195,7 @@
             }
         </div>
     }
-</MudPaper>
+</div>
 
 @code {
     [Parameter] public TicketFiltro Filtro { get; set; } = new();
@@ -239,7 +233,6 @@
         }
     }
 
-    // ===== Atajos de período =====
     // ===== Atajos de período =====
     private async Task AplicarPeriodo(string clave)
     {

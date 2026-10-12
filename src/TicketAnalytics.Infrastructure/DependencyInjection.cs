@@ -47,7 +47,8 @@ public static class DependencyInjection
         services.AddScoped<IGestionCasoService, GestionCasoService>();
         services.AddScoped<IIndicadoresGestionService, IndicadoresGestionService>();
         services.AddScoped<ISnapshotService, SnapshotService>();
-        services.AddScoped<ITrabajoDiarioService, TrabajoDiarioService>();
+        // Diario TI desactivado (2026-10-12): ver Program.cs (MapTrabajoDiarioEndpoints).
+        // services.AddScoped<ITrabajoDiarioService, TrabajoDiarioService>();
 
         return services;
     }

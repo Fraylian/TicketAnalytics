@@ -110,3 +110,14 @@ public class AgregarActualizacionRequest
     public string? ProximosPasos { get; set; }
     public DateTime? ProximoSeguimiento { get; set; }
 }
+
+/// <summary>Conteos de la bandeja de seguimiento para los filtros aplicados (todas las páginas).</summary>
+public class ResumenSeguimientoDto
+{
+    public int Total { get; set; }
+    public int ConJira { get; set; }
+    public int ConProveedor { get; set; }
+    public int RequierenAtencion { get; set; }
+    public int SinActualizar { get; set; }
+    public int EnReporteVP { get; set; }
+}

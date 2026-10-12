@@ -1,0 +1,66 @@
+@* Barra 100% apilada por fila (p. ej. proveedor: cumplió / no cumplió / sin evaluar).
+   Cada fila muestra el % del primer segmento a la derecha (el "bueno") y es clicable
+   para filtrar. Tooltip por segmento con cantidad y porcentaje. *@
+
+@if (!Filas.Any())
+{
+    <EmptyState Mensaje="@MensajeVacio" Icono="@Icons.Material.Filled.StackedBarChart" />
+}
+else
+{
+    <div class="ta-apilada">
+        @for (var idx = 0; idx < Filas.Count; idx++)
+        {
+            var f = Filas[idx];
+            var total = f.Segmentos.Sum(s => s.Valor);
+            var sel = Seleccionado is not null && Seleccionado == f.Clave;
+            var pctPrincipal = total == 0 ? 0 : Math.Round(f.Segmentos[0].Valor * 100.0 / total);
+            <div class="@($"fila {(Clicable ? "click" : "")} {(sel ? "sel" : "")}")" style="@($"--i:{idx}")"
+                 tabindex="@(Clicable ? 0 : -1)" role="@(Clicable ? "button" : null)"
+                 @onclick="@(() => Elegir(f))" @onkeydown="@(e => Tecla(e, f))">
+                <div class="etq">@f.Etiqueta<small>@total @(total == 1 ? Unidad : UnidadPlural)</small></div>
+                <div class="barra">
+                    @foreach (var s in f.Segmentos.Where(s => s.Valor > 0))
+                    {
+                        var w = total == 0 ? 0 : s.Valor * 100.0 / total;
+                        <span class="seg" style="@($"--w:{F(w)}%;background:{s.Color}")"
+                              title="@($"{s.Nombre}: {s.Valor} de {total} ({Math.Round(w)}%)")">@(w >= 14 ? $"{Math.Round(w)}%" : "")</span>
+                    }
+                </div>
+                <div class="pct" style="@($"color:{ColorPct(pctPrincipal)}")">@(total == 0 ? "—" : $"{pctPrincipal}%")</div>
+            </div>
+        }
+    </div>
+    <div class="ta-leyenda">
+        @foreach (var s in Filas[0].Segmentos)
+        {
+            <span><i style="@($"background:{s.Color}")"></i>@s.Nombre</span>
+        }
+        @if (Clicable)
+        {
+            <span class="ta-tenue">· Clic en una fila para filtrar</span>
+        }
+    </div>
+}
+
+@code {
+    public record Segmento(string Nombre, int Valor, string Color);
+    public record Fila(string Clave, string Etiqueta, List<Segmento> Segmentos);
+
+    [Parameter] public List<Fila> Filas { get; set; } = new();
+    [Parameter] public string? Seleccionado { get; set; }
+    [Parameter] public EventCallback<Fila> OnSeleccionar { get; set; }
+    [Parameter] public string Unidad { get; set; } = "caso";
+    [Parameter] public string UnidadPlural { get; set; } = "casos";
+    [Parameter] public double Meta { get; set; } = 90;
+    [Parameter] public string MensajeVacio { get; set; } = "Sin datos para el período.";
+
+    private bool Clicable => OnSeleccionar.HasDelegate;
+
+    private string ColorPct(double p) => p >= Meta ? "var(--op-cumplido)" : p >= Meta - 20 ? "var(--op-riesgo)" : "var(--op-vencido)";
+
+    private async Task Elegir(Fila f) { if (Clicable) await OnSeleccionar.InvokeAsync(f); }
+    private async Task Tecla(KeyboardEventArgs e, Fila f) { if (Clicable && e.Key is "Enter" or " ") await OnSeleccionar.InvokeAsync(f); }
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

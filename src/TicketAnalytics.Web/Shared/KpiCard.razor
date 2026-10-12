@@ -1,30 +1,53 @@
-@* Tarjeta KPI: valor, icono, comparación con período anterior, sparkline y drill-down. *@
+@* Tarjeta KPI: valor animado, icono con acento, comparación con período anterior,
+   sparkline animado, barra de progreso opcional, estado "activo" (cuando filtra) y drill-down. *@
 @if (Cargando)
 {
     <div class="kpi @AcentoClass">
-        <MudSkeleton Width="60%" Height="14px" />
-        <MudSkeleton Width="45%" Height="34px" Class="mt-2" />
-        <MudSkeleton Width="70%" Height="12px" Class="mt-2" />
+        <MudSkeleton Width="60%" Height="14px" Animation="Animation.Wave" />
+        <MudSkeleton Width="45%" Height="34px" Class="mt-2" Animation="Animation.Wave" />
+        <MudSkeleton Width="70%" Height="12px" Class="mt-2" Animation="Animation.Wave" />
     </div>
 }
 else
 {
-    <div class="kpi @AcentoClass @(EsClickable ? "kpi--clickable ta-clickable" : "") ta-hover-card"
+    <div class="@($"kpi {AcentoClass} {(EsClickable ? "kpi--clickable ta-clickable" : "")} {(Activo ? "kpi--activo" : "")} ta-hover-card")"
+         style="@($"--kpi-color:{ColorHex}")"
          @onclick="Clic" @onkeydown="Tecla"
          tabindex="@(EsClickable ? 0 : -1)"
+         role="@(EsClickable ? "button" : null)"
+         aria-pressed="@(EsClickable ? Activo.ToString().ToLowerInvariant() : null)"
          aria-label="@($"{Titulo}: {Valor}")">
         <div>
-            <div class="d-flex justify-space-between align-start">
+            <div class="d-flex justify-space-between align-start gap-2">
                 <div class="kpi-etiqueta">@Titulo</div>
                 @if (!string.IsNullOrEmpty(Icono))
                 {
-                    <MudIcon Icon="@Icono" Size="Size.Small" Style="@($"color:{ColorHex};opacity:.55")" />
+                    <span class="kpi-ico"><MudIcon Icon="@Icono" Size="Size.Small" /></span>
                 }
             </div>
-            <div class="kpi-valor" style="@($"color:{ColorHex}")">@Valor</div>
+            <div class="@($"kpi-valor {(_numero is null && (Valor?.Length ?? 0) > 10 ? "kpi-valor--texto" : "")}")" style="@($"color:{ColorHex}")">
+                @if (_numero is { } n)
+                {
+                    @n.Prefijo<AnimatedNumber Valor="n.Valor" Decimales="n.Decimales" />
+                    @if (!string.IsNullOrEmpty(n.Sufijo))
+                    {
+                        <span class="kpi-sufijo">@n.Sufijo</span>
+                    }
+                }
+                else
+                {
+                    @Valor
+                }
+            </div>
             @if (!string.IsNullOrEmpty(Nota))
             {
                 <div class="kpi-nota">@Nota</div>
+            }
+            @if (Progreso.HasValue)
+            {
+                <div class="kpi-prog" title="@($"{Progreso:0.#}%")">
+                    <span style="@($"--w:{F(Math.Clamp(Progreso.Value, 0, 100))}%")"></span>
+                </div>
             }
         </div>
 
@@ -36,11 +59,16 @@ else
                     <span>@TextoDelta</span>
                 </div>
             }
+            else if (EsClickable)
+            {
+                <span class="kpi-pista">@(Activo ? "Quitar filtro" : TextoAccion) <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Style="font-size:14px" /></span>
+            }
             @if (Sparkline is { Count: > 1 })
             {
-                <svg class="kpi-spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
-                    <polyline points="@PuntosSpark" fill="none" stroke="@ColorHex" stroke-width="2"
-                              stroke-linecap="round" stroke-linejoin="round" opacity=".7" />
+                <svg class="kpi-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">
+                    <polygon class="area" points="@($"0,30 {PuntosSpark} 100,30")" fill="@ColorHex" fill-opacity=".14" />
+                    <polyline class="linea" points="@PuntosSpark" fill="none" stroke="@ColorHex" stroke-width="2"
+                              stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
                 </svg>
             }
         </div>
@@ -52,7 +80,7 @@ else
     [Parameter] public string Valor { get; set; } = "";
     [Parameter] public string? Nota { get; set; }
     [Parameter] public string? Icono { get; set; }
-    /// <summary>azul | verde | vencido | riesgo | cumplido | curso | neutro</summary>
+    /// <summary>azul | verde | vencido | riesgo | cumplido | curso | violeta | neutro</summary>
     [Parameter] public string Acento { get; set; } = "azul";
     [Parameter] public double? Tendencia { get; set; }
     [Parameter] public string TendenciaSufijo { get; set; } = "%";
@@ -62,6 +90,11 @@ else
     [Parameter] public string? ComparadoCon { get; set; }
     /// <summary>Serie corta para el sparkline (opcional).</summary>
     [Parameter] public List<double>? Sparkline { get; set; }
+    /// <summary>0-100: muestra una barra de progreso bajo el valor.</summary>
+    [Parameter] public double? Progreso { get; set; }
+    /// <summary>True cuando la tarjeta es el filtro aplicado: queda resaltada.</summary>
+    [Parameter] public bool Activo { get; set; }
+    [Parameter] public string TextoAccion { get; set; } = "Ver detalle";
     [Parameter] public bool Cargando { get; set; }
     /// <summary>True si un delta positivo es malo (ej. "vencidos"): invierte el color.</summary>
     [Parameter] public bool DeltaPositivoEsMalo { get; set; }
@@ -69,12 +102,32 @@ else
 
     private bool EsClickable => OnClick.HasDelegate;
 
+    private sealed record NumeroKpi(string Prefijo, double Valor, int Decimales, string Sufijo);
+    private NumeroKpi? _numero;
+
+    // "85", "85.5%", "12,0h", "+3", "$1,250" → número animable; cualquier otra cosa se muestra tal cual.
+    private static readonly System.Text.RegularExpressions.Regex Patron =
+        new(@"^\s*([+\-]?)(\d+)(?:[.,](\d+))?\s*([%a-zA-Záéíóú/]*)\s*$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    protected override void OnParametersSet()
+    {
+        _numero = null;
+        var m = Patron.Match(Valor ?? "");
+        if (!m.Success) return;
+        var dec = m.Groups[3].Success ? m.Groups[3].Value : "";
+        var txt = m.Groups[2].Value + (dec.Length > 0 ? "." + dec : "");
+        if (!double.TryParse(txt, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v)) return;
+        var prefijo = m.Groups[1].Value == "+" ? "+" : "";
+        if (m.Groups[1].Value == "-") v = -v;
+        _numero = new NumeroKpi(prefijo, v, dec.Length, m.Groups[4].Value);
+    }
+
     private string AcentoClass => Acento switch
     {
         "vencido" => "kpi--acento-vencido",
         "riesgo" => "kpi--acento-riesgo",
         "cumplido" or "verde" => "kpi--acento-cumplido",
-        "curso" or "azul" => "kpi--acento-azul",
+        "curso" or "azul" or "violeta" => "kpi--acento-azul",
         _ => ""
     };
 
@@ -84,6 +137,7 @@ else
         "riesgo" => "var(--op-riesgo)",
         "cumplido" or "verde" => "var(--op-cumplido)",
         "curso" or "azul" => "var(--bsc-azul)",
+        "violeta" => "#6B4EFF",
         _ => "var(--texto-primario)"
     };
 
@@ -114,7 +168,10 @@ else
                 var comp = string.IsNullOrWhiteSpace(ComparadoCon) ? "" : $" vs {ComparadoCon}";
                 return $"{signo}{Delta.Value}{comp}";
             }
-            return Tendencia.HasValue ? $"{Math.Abs(Tendencia.Value)}{TendenciaSufijo}" : "";
+            if (!Tendencia.HasValue) return "";
+            var s = Tendencia.Value > 0 ? "+" : Tendencia.Value < 0 ? "−" : "";
+            var c = string.IsNullOrWhiteSpace(ComparadoCon) ? " vs período anterior" : $" vs {ComparadoCon}";
+            return $"{s}{Math.Abs(Tendencia.Value)}{TendenciaSufijo}{c}";
         }
     }
 
@@ -127,15 +184,16 @@ else
             double min = s.Min(), max = s.Max();
             double rango = Math.Abs(max - min) < 0.0001 ? 1 : max - min;
             var pasos = s.Count - 1;
-            var ci = System.Globalization.CultureInfo.InvariantCulture;
             return string.Join(" ", s.Select((v, i) =>
             {
                 var x = pasos == 0 ? 0 : i * 100.0 / pasos;
-                var y = 26 - ((v - min) / rango * 24);
-                return $"{x.ToString("0.##", ci)},{y.ToString("0.##", ci)}";
+                var y = 27 - ((v - min) / rango * 24);
+                return $"{F(x)},{F(y)}";
             }));
         }
     }
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
     private async Task Clic() { if (EsClickable) await OnClick.InvokeAsync(); }
 

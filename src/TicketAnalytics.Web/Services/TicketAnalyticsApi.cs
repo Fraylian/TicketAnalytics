@@ -234,6 +234,25 @@ public class TicketAnalyticsApi
         return await resp.Content.ReadAsByteArrayAsync(ct);
     }
 
+    // ===== Exportaciones a Excel real (todas las filas que cumplen el filtro) =====
+    public Task<byte[]> TicketsExcelBytesAsync(TicketFiltro f, CancellationToken ct = default)
+        => PostBytes("api/tickets/excel", f, ct);
+    public Task<byte[]> OcExcelBytesAsync(OrdenCambioFiltro f, CancellationToken ct = default)
+        => PostBytes("api/ordenes-cambio/excel", f, ct);
+    public Task<byte[]> ActividadesExcelBytesAsync(ActividadFiltro f, CancellationToken ct = default)
+        => PostBytes("api/trabajo-diario/excel", f, ct);
+
+    private async Task<byte[]> PostBytes(string url, object body, CancellationToken ct)
+    {
+        var resp = await _http.PostAsJsonAsync(url, body, ct);
+        await GarantizarExitoAsync(resp, ct);
+        return await resp.Content.ReadAsByteArrayAsync(ct);
+    }
+
+    // ===== Resumen de la bandeja de seguimiento =====
+    public async Task<ResumenSeguimientoDto> SeguimientoResumenAsync(TicketFiltro f)
+        => await Post<ResumenSeguimientoDto>("api/seguimiento/resumen", f) ?? new();
+
     // ===== Gestión atómica del caso =====
     public async Task<GestionCasoResultado?> RegistrarGestionAsync(string refNum, GestionCasoRequest req, CancellationToken ct = default)
         => await Post<GestionCasoResultado>($"api/casos/{refNum}/gestion", req, ct);

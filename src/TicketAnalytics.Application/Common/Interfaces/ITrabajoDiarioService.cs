@@ -10,6 +10,8 @@ public interface ITrabajoDiarioService
     Task<TecnicoDto> CrearTecnicoAsync(string nombre, CancellationToken ct = default);
 
     Task<PagedResult<ActividadDto>> BuscarAsync(ActividadFiltro f, CancellationToken ct = default);
+    /// <summary>Todas las actividades que cumplen el filtro, SIN paginar. Para exportaciones completas.</summary>
+    Task<List<ActividadDto>> BuscarTodasAsync(ActividadFiltro f, CancellationToken ct = default);
     Task<ActividadDto> GuardarAsync(GuardarActividadRequest req, CancellationToken ct = default);
     Task<bool> EliminarAsync(long actividadId, string? usuario, CancellationToken ct = default);
     Task<ResumenJornadaDto> ResumenAsync(ActividadFiltro f, CancellationToken ct = default);

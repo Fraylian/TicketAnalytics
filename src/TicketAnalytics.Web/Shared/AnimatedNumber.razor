@@ -1,0 +1,37 @@
+@* Número que "cuenta" hasta su valor cuando aparece o cambia.
+   El texto renderizado por Blazor es siempre el valor final (accesible y sin JS);
+   el módulo JS solo anima la transición entre el valor anterior y el nuevo. *@
+@inject UiService Ui
+
+<span @ref="_el" class="ta-num-anim">@TextoFinal</span>
+
+@code {
+    [Parameter] public double Valor { get; set; }
+    [Parameter] public int Decimales { get; set; }
+    [Parameter] public int DuracionMs { get; set; } = 900;
+
+    private ElementReference _el;
+    private double _anterior;
+    private bool _primera = true;
+    private bool _pendiente;
+
+    private static readonly System.Globalization.CultureInfo Cultura = new("es-DO");
+
+    private string TextoFinal => Valor.ToString("N" + Decimales, Cultura);
+
+    protected override void OnParametersSet()
+    {
+        // Solo animamos cuando el valor realmente cambió (o en la primera aparición).
+        if (_primera || Math.Abs(Valor - _anterior) > 0.0001) _pendiente = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_pendiente) return;
+        _pendiente = false;
+        var desde = _primera ? 0 : _anterior;
+        _primera = false;
+        _anterior = Valor;
+        await Ui.AnimarNumeroAsync(_el, desde, Valor, Decimales, TextoFinal, DuracionMs);
+    }
+}

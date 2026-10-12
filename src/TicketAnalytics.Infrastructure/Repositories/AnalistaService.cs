@@ -76,7 +76,7 @@ public class AnalistaService : IAnalistaService
 
         // Seguimiento local por tecnico
         var seguimientos = await _analytics.TicketSeguimientos.AsNoTracking()
-            .Select(s => new { s.TecnicoUuid, s.EtapaActual, s.ProximoSeguimiento }).ToListAsync(ct);
+            .Select(s => new { s.TecnicoUuid, s.TecnicoResponsable, s.EtapaActual, s.ProximoSeguimiento }).ToListAsync(ct);
         var actualizaciones = await _analytics.SeguimientoActualizaciones.AsNoTracking()
             .Where(a => a.CreadoEn >= (f.FechaDesde ?? DateTime.MinValue))
             .Select(a => a.Autor).ToListAsync(ct);
@@ -97,7 +97,12 @@ public class AnalistaService : IAnalistaService
             var horasResol = cer.Where(c => c.close_date > 0)
                 .Select(c => (EpochRD.ToDateTime(c.close_date)!.Value - EpochRD.ToDateTime(c.open_date)!.Value).TotalHours).ToList();
 
-            var segsTecnico = seguimientos.Where(s => s.TecnicoUuid != null && s.TecnicoUuid.SequenceEqual(bytes)).ToList();
+            // TecnicoUuid no lo llena ningún flujo actual; la gestión guarda el nombre en TecnicoResponsable.
+            // Se usa el UUID si existe y, si no, el nombre del analista (antes estas métricas siempre daban 0).
+            var nombreAnalista = Nombre(hex);
+            var segsTecnico = seguimientos.Where(s =>
+                (s.TecnicoUuid != null && s.TecnicoUuid.SequenceEqual(bytes))
+                || (s.TecnicoUuid == null && string.Equals(s.TecnicoResponsable, nombreAnalista, StringComparison.OrdinalIgnoreCase))).ToList();
 
             result.Add(new MetricaAnalistaDto
             {

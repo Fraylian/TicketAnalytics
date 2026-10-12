@@ -154,10 +154,10 @@ else
                                                 {
                                                     var n = c.PorEstado[e.Nombre];
                                                     var w = c.Total == 0 ? 0 : n * 100.0 / c.Total;
-                                                    <MudTooltip Text="@($"{e.Nombre}: {n} de {c.Total}")">
-                                                        <span style="@($"width:{w.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%;background:{e.Color};cursor:pointer")"
-                                                              @onclick="@(() => FiltrarPorEstado(e.Valor))"></span>
-                                                    </MudTooltip>
+                                                    @* title nativo: un MudTooltip envolvía el segmento y lo dejaba sin ancho *@
+                                                    <span style="@($"width:{w.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%;background:{e.Color};cursor:pointer")"
+                                                          title="@($"{e.Nombre}: {n} de {c.Total}")"
+                                                          @onclick="@(() => FiltrarPorEstado(e.Valor))"></span>
                                                 }
                                             </div>
                                         </div>
@@ -533,7 +533,7 @@ else
         var dlg = await DialogService.ShowAsync<CasoVPDialog>("Agregar caso al reporte", p,
             new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
         var r = await dlg.Result;
-        if (!r.Canceled) { Snackbar.Add("Caso agregado al reporte", Severity.Success); await Cargar(false); }
+        if (r is { Canceled: false }) { Snackbar.Add("Caso agregado al reporte", Severity.Success); await Cargar(false); }
     }
 
     private async Task EditarCaso(CasoReporteVPDto caso)
@@ -545,7 +545,7 @@ else
         var dlg = await DialogService.ShowAsync<CasoVPDialog>($"Editar {caso.RefNum}", p,
             new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
         var r = await dlg.Result;
-        if (!r.Canceled) { Snackbar.Add("Caso actualizado", Severity.Success); await Cargar(false); }
+        if (r is { Canceled: false }) { Snackbar.Add("Caso actualizado", Severity.Success); await Cargar(false); }
     }
 
     private async Task QuitarCaso(CasoReporteVPDto caso)

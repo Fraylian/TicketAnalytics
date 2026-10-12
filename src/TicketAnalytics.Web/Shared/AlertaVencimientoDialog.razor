@@ -1,0 +1,97 @@
+@* Aviso emergente: tickets del grupo que vencen en la próxima hora, con cuenta regresiva. *@
+@inject NavigationManager Nav
+@inject UiService Ui
+@implements IDisposable
+
+<MudDialog Class="ta-alerta-dialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-3">
+            <span class="ta-alerta-icono"><MudIcon Icon="@Icons.Material.Filled.AlarmOn" /></span>
+            <div>
+                <MudText Typo="Typo.h6" Style="font-weight:700;line-height:1.2">
+                    @(Tickets.Count == 1 ? "1 ticket está a punto de vencer" : $"{Tickets.Count} tickets están a punto de vencer")
+                </MudText>
+                <MudText Typo="Typo.caption" Class="ta-muted">Su SLA vence en menos de @ReglaAlertas.MinutosAntelacion minutos</MudText>
+            </div>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="ta-alerta-lista">
+            @foreach (var t in Tickets.OrderBy(x => x.FechaVencimiento))
+            {
+                <div class="@($"ta-alerta-item {t.Nivel}")">
+                    <div class="reloj">
+                        <b>@(Math.Max(0, (int)Math.Ceiling(t.MinutosRestantes)))</b>
+                        <span>min</span>
+                    </div>
+                    <div class="cuerpo">
+                        <div class="d-flex align-center gap-2 flex-wrap">
+                            <span class="ref">@t.NoTicket</span>
+                            <span class="ta-tag err">@t.TextoRestante</span>
+                        </div>
+                        <div class="titulo">@Formato.Corto(t.Titulo, 110)</div>
+                        <div class="meta">
+                            <span class="ta-avatar sm" style="@($"background:{Formato.ColorAvatar(t.Analista)}")">@Formato.Iniciales(t.Analista)</span>
+                            @t.Analista · vence a las @t.FechaVencimiento.ToString("HH:mm")
+                        </div>
+                    </div>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward"
+                               OnClick="@(() => VerTicket(t.NoTicket))">Ver</MudButton>
+                </div>
+            }
+        </div>
+
+        @if (_permiso is "default")
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3" Icon="@Icons.Material.Filled.NotificationsActive">
+                <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                    <span>Activa las notificaciones del escritorio para recibir estos avisos aunque estés en otra pestaña.</span>
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" OnClick="ActivarNotificaciones">Activar</MudButton>
+                </div>
+            </MudAlert>
+        }
+        else if (_permiso is "denied")
+        {
+            <MudText Typo="Typo.caption" Class="ta-muted d-block mt-3">
+                Las notificaciones del escritorio están bloqueadas en este navegador; los avisos seguirán apareciendo dentro de la aplicación.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="IrABandeja" StartIcon="@Icons.Material.Filled.Groups">Ver bandeja del equipo</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Cerrar">Entendido</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<AlertaTicket> Tickets { get; set; } = new();
+
+    private string _permiso = "granted";
+    private Timer? _reloj;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _permiso = await Ui.PermisoNotificacionesAsync();
+        // La cuenta regresiva se refresca cada 20 s mientras el aviso está abierto.
+        _reloj = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20));
+    }
+
+    private async Task ActivarNotificaciones() => _permiso = await Ui.PedirPermisoNotificacionesAsync();
+
+    private void VerTicket(string refNum)
+    {
+        MudDialog.Close();
+        Nav.NavigateTo($"/tickets?vista=todos&ticket={Uri.EscapeDataString(refNum)}");
+    }
+
+    private void IrABandeja()
+    {
+        MudDialog.Close();
+        Nav.NavigateTo("/analistas#bandeja-equipo");
+    }
+
+    private void Cerrar() => MudDialog.Close();
+
+    public void Dispose() => _reloj?.Dispose();
+}

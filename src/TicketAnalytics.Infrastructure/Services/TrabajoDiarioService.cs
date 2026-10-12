@@ -89,6 +89,22 @@ public class TrabajoDiarioService : ITrabajoDiarioService
     // ============ ACTIVIDADES (CRUD) ============
     public async Task<PagedResult<ActividadDto>> BuscarAsync(ActividadFiltro f, CancellationToken ct = default)
     {
+        var q = FiltrarActividades(f);
+        var total = await q.CountAsync(ct);
+
+        var pagina = f.Page < 1 ? 1 : f.Page;
+        var tam = f.PageSize is < 1 or > 200 ? 10 : f.PageSize;
+        var items = await OrdenarActividades(q, f).Skip((pagina - 1) * tam).Take(tam).Select(a => Map(a)).ToListAsync(ct);
+
+        return new PagedResult<ActividadDto> { Items = items, TotalCount = total, Page = pagina, PageSize = tam };
+    }
+
+    public async Task<List<ActividadDto>> BuscarTodasAsync(ActividadFiltro f, CancellationToken ct = default)
+        => await OrdenarActividades(FiltrarActividades(f), f).Select(a => Map(a)).ToListAsync(ct);
+
+    /// <summary>Filtros comunes a la búsqueda paginada y a la exportación completa.</summary>
+    private IQueryable<ActividadDiaria> FiltrarActividades(ActividadFiltro f)
+    {
         var q = _db.ActividadesDiarias.AsNoTracking().Include(a => a.Tecnico).AsQueryable();
 
         if (f.FechaDesde.HasValue) q = q.Where(a => a.Fecha >= f.FechaDesde.Value);
@@ -104,10 +120,11 @@ public class TrabajoDiarioService : ITrabajoDiarioService
             q = q.Where(a => a.Actividad.Contains(t) || (a.Proyecto != null && a.Proyecto.Contains(t))
                           || (a.NoSolicitud != null && a.NoSolicitud.Contains(t)) || (a.Tecnico != null && a.Tecnico.Nombre.Contains(t)));
         }
+        return q;
+    }
 
-        var total = await q.CountAsync(ct);
-
-        q = (f.OrderBy?.ToLowerInvariant(), f.OrderDesc) switch
+    private static IQueryable<ActividadDiaria> OrdenarActividades(IQueryable<ActividadDiaria> q, ActividadFiltro f)
+        => (f.OrderBy?.ToLowerInvariant(), f.OrderDesc) switch
         {
             ("tecnico", true) => q.OrderByDescending(a => a.Tecnico!.Nombre),
             ("tecnico", false) => q.OrderBy(a => a.Tecnico!.Nombre),
@@ -118,13 +135,6 @@ public class TrabajoDiarioService : ITrabajoDiarioService
             ("fecha", false) => q.OrderBy(a => a.Fecha).ThenByDescending(a => a.ActividadId),
             _ => q.OrderByDescending(a => a.Fecha).ThenByDescending(a => a.ActividadId)
         };
-
-        var pagina = f.Page < 1 ? 1 : f.Page;
-        var tam = f.PageSize is < 1 or > 200 ? 10 : f.PageSize;
-        var items = await q.Skip((pagina - 1) * tam).Take(tam).Select(a => Map(a)).ToListAsync(ct);
-
-        return new PagedResult<ActividadDto> { Items = items, TotalCount = total, Page = pagina, PageSize = tam };
-    }
 
     public async Task<ActividadDto> GuardarAsync(GuardarActividadRequest req, CancellationToken ct = default)
     {

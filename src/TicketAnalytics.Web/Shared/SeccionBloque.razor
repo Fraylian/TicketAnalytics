@@ -1,0 +1,26 @@
+@* Encabezado de un bloque temático dentro de una página (Estado general, Riesgo, Flujo…). *@
+<div class="@($"ta-bloque {(Primero ? "primero" : "")}")" id="@Id">
+    <div class="cab">
+        @if (!string.IsNullOrEmpty(Icono))
+        {
+            <span class="ico"><MudIcon Icon="@Icono" Size="Size.Small" /></span>
+        }
+        <div>
+            <h2>@Titulo</h2>
+            @if (!string.IsNullOrWhiteSpace(Bajada))
+            {
+                <p>@Bajada</p>
+            }
+        </div>
+    </div>
+    @Acciones
+</div>
+
+@code {
+    [Parameter] public string Titulo { get; set; } = "";
+    [Parameter] public string? Bajada { get; set; }
+    [Parameter] public string? Icono { get; set; }
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public bool Primero { get; set; }
+    [Parameter] public RenderFragment? Acciones { get; set; }
+}

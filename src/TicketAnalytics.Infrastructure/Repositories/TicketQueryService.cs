@@ -442,13 +442,13 @@ public class TicketQueryService : ITicketQueryService
         {
             FechaDesde = f.FechaDesde ?? new DateTime(2026, 1, 1),
             FechaHasta = f.FechaHasta,
-            Categorias = f.Categorias,
-            Page = 1,
-            PageSize = 5000
+            Categorias = f.Categorias
         };
-        var page = await BuscarAsync(filtro, ct);
+        // Sin paginar: antes pedía PageSize = 5000 a BuscarAsync, que lo reducía en silencio a 25
+        // y la bandeja mostraba solo los abiertos de los primeros 25 tickets.
+        var todos = await BuscarTodosAsync(filtro, ct);
         // Solo abiertos (sin fecha de cierre)
-        var abiertos = page.Items.Where(t => !t.FechaCierreSolicitado.HasValue
+        var abiertos = todos.Where(t => !t.FechaCierreSolicitado.HasValue
                                              && t.EstadoVencimiento != "cerrado").ToList();
 
         // Limitar al grupo de analistas

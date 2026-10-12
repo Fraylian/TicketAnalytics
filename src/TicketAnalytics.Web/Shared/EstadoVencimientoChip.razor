@@ -1,4 +1,5 @@
-@* Chip visual del estado de vencimiento de una OC. *@
+@* Chip visual del estado de vencimiento. Acepta los estados de OC (vencida, completada…)
+   y los de ticket (vencido, cerrado…), que el backend nombra distinto. *@
 <MudChip T="string" Size="@Size" Variant="Variant.Filled" Style="@($"background:{Fondo};color:#fff")">
     <MudIcon Icon="@Icono" Size="Size.Small" Class="mr-1" /> @Texto
 </MudChip>
@@ -11,6 +12,8 @@
     private string Texto => Estado switch
     {
         "vencida" => DiasRestantes.HasValue ? $"Vencida ({Math.Abs(DiasRestantes.Value)}d)" : "Vencida",
+        "vencido" => DiasRestantes.HasValue ? $"Vencido ({Math.Abs(DiasRestantes.Value)}d)" : "Vencido",
+        "cerrado" => "Cerrado",
         "vence_hoy" => "Vence hoy",
         "vence_pronto" => DiasRestantes.HasValue ? $"Vence en {DiasRestantes}d" : "Vence pronto",
         "en_curso" => DiasRestantes.HasValue ? $"{DiasRestantes}d restantes" : "En curso",
@@ -19,7 +22,8 @@
     };
     private string Fondo => Estado switch
     {
-        "vencida" => "var(--op-vencido)",
+        "vencida" or "vencido" => "var(--op-vencido)",
+        "cerrado" => "var(--op-cumplido)",
         "vence_hoy" => "var(--op-vencido)",
         "vence_pronto" => "var(--op-riesgo)",
         "en_curso" => "var(--op-curso)",
@@ -28,7 +32,8 @@
     };
     private string Icono => Estado switch
     {
-        "vencida" => Icons.Material.Filled.Error,
+        "vencida" or "vencido" => Icons.Material.Filled.Error,
+        "cerrado" => Icons.Material.Filled.CheckCircle,
         "vence_hoy" => Icons.Material.Filled.Today,
         "vence_pronto" => Icons.Material.Filled.Schedule,
         "en_curso" => Icons.Material.Filled.HourglassBottom,

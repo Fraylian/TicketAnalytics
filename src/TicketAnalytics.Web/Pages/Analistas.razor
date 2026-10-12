@@ -1,372 +1,394 @@
 @page "/analistas"
 @inject TicketAnalyticsApi Api
+@inject NavigationManager Nav
+@inject UiService Ui
 
 <PageTitle>Analistas · TicketAnalytics</PageTitle>
 
-<div class="mb-4">
-    <h1 class="seccion-titulo">Analistas</h1>
-    <p class="seccion-bajada">Asignaciones, cierres y ritmo de trabajo según el período</p>
-</div>
+<PageHeader Titulo="Analistas" Icono="@Icons.Material.Filled.Groups"
+            Bajada="Asignaciones, cierres, backlog y ritmo de trabajo del equipo"
+            UltimaActualizacion="_ultimaCarga" Actualizando="_cargando" OnRefrescar="Cargar" />
 
 <FiltroPanel Filtro="_filtro" OnAplicar="Cargar" Contexto="analistas" />
 
-@if (_metricas.Any())
+@if (_error is not null)
 {
-    <MudPaper Class="pa-3 mb-3" Elevation="0" Style="border:1px solid var(--bsc-borde);border-radius:12px;">
-        <MudGrid Spacing="2" AlignItems="Center">
-            <MudItem xs="12" md="5">
-                <MudSelect T="string" Value="_analistaSel" ValueChanged="OnAnalistaSeleccionado" Label="Ver detalle de un analista"
-                           Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" AdornmentIcon="@Icons.Material.Filled.Person">
-                    @foreach (var m in _metricas.OrderBy(x => x.Analista))
-                    {
-                        <MudSelectItem T="string" Value="@m.Analista">@m.Analista</MudSelectItem>
-                    }
-                </MudSelect>
-            </MudItem>
-            <MudItem xs="12" md="7">
-                <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
-                    Selecciona un analista para ver sus números en detalle, o revisa la tabla completa abajo.
-                </MudText>
-            </MudItem>
-        </MudGrid>
-    </MudPaper>
+    <ErrorState Mensaje="No pudimos cargar las métricas del equipo." Detalle="@_error" OnReintentar="Cargar" />
 }
-
-@if (_detalle is not null)
-{
-    <div class="panel mb-4" style="border-left:4px solid var(--bsc-azul)">
-        <div class="d-flex justify-space-between align-center mb-3">
-            <div class="d-flex align-center gap-2">
-                <MudAvatar Color="Color.Primary" Size="Size.Medium">@Iniciales(_detalle.Analista)</MudAvatar>
-                <div>
-                    <MudText Typo="Typo.h6" Style="font-weight:600">@_detalle.Analista</MudText>
-                    <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">Detalle del período seleccionado</MudText>
-                </div>
-            </div>
-            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => OnAnalistaSeleccionado(null))" />
-        </div>
-
-        <MudGrid Spacing="3" Class="mb-3">
-            <MudItem xs="6" md="3"><KpiCard Titulo="Tickets recibidos" Valor="@_detalle.TotalRecibidos.ToString()" Icono="@Icons.Material.Filled.MoveToInbox" Acento="azul" Nota="@($"{_detalle.PromedioRecibidosDia}/día")" /></MudItem>
-            <MudItem xs="6" md="3"><KpiCard Titulo="Tickets cerrados" Valor="@_detalle.TotalCerrados.ToString()" Icono="@Icons.Material.Filled.CheckCircle" Acento="cumplido" Nota="@($"{_detalle.PromedioCerradosDia}/día")" /></MudItem>
-            <MudItem xs="6" md="3"><KpiCard Titulo="Abiertos ahora" Valor="@_detalle.TotalActivos.ToString()" Icono="@Icons.Material.Filled.FolderOpen" Acento="riesgo" /></MudItem>
-            <MudItem xs="6" md="3"><KpiCard Titulo="Balance" Valor="@($"{(_detalle.TotalCerrados - _detalle.TotalRecibidos >= 0 ? "+" : "")}{_detalle.TotalCerrados - _detalle.TotalRecibidos}")" Icono="@Icons.Material.Filled.Balance" Acento="@(_detalle.TotalCerrados - _detalle.TotalRecibidos >= 0 ? "cumplido" : "riesgo")" Nota="cerrados − recibidos" /></MudItem>
-        </MudGrid>
-
-        <MudGrid Spacing="3">
-            <MudItem xs="6" md="3"><KpiCard Titulo="OC recibidas" Valor="@_detalle.OcRecibidas.ToString()" Icono="@Icons.Material.Filled.ChangeCircle" Acento="azul" Nota="@($"{_detalle.OcPromedioRecibidasDia}/día")" /></MudItem>
-            <MudItem xs="6" md="3"><KpiCard Titulo="OC cerradas" Valor="@_detalle.OcCerradas.ToString()" Icono="@Icons.Material.Filled.TaskAlt" Acento="cumplido" Nota="@($"{_detalle.OcPromedioCerradasDia}/día")" /></MudItem>
-            <MudItem xs="6" md="3"><KpiCard Titulo="Pend. seguimiento" Valor="@_detalle.CasosPendientesSeguimiento.ToString()" Icono="@Icons.Material.Filled.PendingActions" Acento="riesgo" /></MudItem>
-            <MudItem xs="6" md="3"><KpiCard Titulo="Espera proveedor" Valor="@_detalle.CasosEnEsperaProveedor.ToString()" Icono="@Icons.Material.Filled.Business" Acento="neutro" Nota="@($"{_detalle.ActualizacionesRealizadas} actualizaciones")" /></MudItem>
-        </MudGrid>
-
-        <div class="mt-3">
-            <MudText Typo="Typo.overline" Style="color:var(--texto-secundario)">Recibidos contra cerrados por día (promedio sobre días con actividad)</MudText>
-            <ApexChart TItem="PuntoAnalista" Options="@_opcionesDetalle" Height="200">
-                <ApexPointSeries TItem="PuntoAnalista" Items="_detalleGrafico" Name="Por día" XValue="@(x => x.Analista)" YValue="@(x => x.Recibidos)" SeriesType="SeriesType.Bar" />
-            </ApexChart>
-        </div>
-
-        @* Listado real de los casos del analista: su cola de trabajo *@
-        <div class="mt-4">
-            <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-3">
-                <MudTabPanel Text="Tickets del analista" Icon="@Icons.Material.Filled.ConfirmationNumber">
-                    <PanelTecnico Tecnico="@_detalle.Analista" EsOrdenCambio="false"
-                                  VistaInicial="abiertas"
-                                  OnCerrar="@(() => OnAnalistaSeleccionado(null))" />
-                </MudTabPanel>
-                <MudTabPanel Text="Órdenes de cambio" Icon="@Icons.Material.Filled.ChangeCircle">
-                    <PanelTecnico Tecnico="@_detalle.Analista" EsOrdenCambio="true"
-                                  VistaInicial="mes"
-                                  OnCerrar="@(() => OnAnalistaSeleccionado(null))" />
-                </MudTabPanel>
-            </MudTabs>
-        </div>
-    </div>
-}
-
-@if (_cargando)
+else if (_cargando && !_metricas.Any())
 {
     <MudGrid Spacing="3">
-        @for (var i = 0; i < 4; i++) { <MudItem xs="12" sm="6" md="3"><MudSkeleton Height="130px" /></MudItem> }
-        <MudItem xs="12"><MudSkeleton Height="340px" /></MudItem>
+        @for (var i = 0; i < 4; i++) { <MudItem xs="6" md="3"><KpiCard Cargando="true" /></MudItem> }
+        @for (var i = 0; i < 6; i++) { <MudItem xs="12" sm="6" lg="4"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="190px" Animation="Animation.Wave" /></MudItem> }
     </MudGrid>
 }
 else if (!_metricas.Any())
 {
     <div class="panel">
-        <div class="vacio">
-            <MudIcon Icon="@Icons.Material.Filled.Groups" Size="Size.Large" Class="vacio-icono" />
-            <MudText>No hay asignaciones en el período seleccionado.</MudText>
-        </div>
+        <EmptyState Icono="@Icons.Material.Filled.Groups" Mensaje="No hay asignaciones en el período seleccionado."
+                    Detalle="Amplía el rango de fechas para ver la actividad del equipo." />
     </div>
 }
 else
 {
-    <!-- Indicadores globales -->
-    <MudGrid Spacing="3" Class="mb-4">
-        <MudItem xs="12" sm="6" md="3">
-            <div class="kpi kpi--acento-azul">
-                <div>
-                    <div class="kpi-etiqueta">Analistas activos</div>
-                    <div class="kpi-valor" style="color:var(--bsc-azul)">@_metricas.Count</div>
-                    <div class="kpi-nota">con movimiento en el período</div>
-                </div>
-            </div>
+    <div class="@(_cargando ? "ta-actualizando" : "")" @key="_version">
+
+    @* ===== Indicadores del equipo ===== *@
+    <MudGrid Spacing="3" Class="ta-stagger mb-1">
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="Asignados" Valor="@TotalRecibidos.ToString()" Icono="@Icons.Material.Filled.MoveToInbox" Acento="azul"
+                     Nota="@($"{_metricas.Count} analistas con movimiento")" />
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <div class="kpi kpi--acento-azul">
-                <div>
-                    <div class="kpi-etiqueta">Asignados</div>
-                    <div class="kpi-valor" style="color:var(--bsc-azul)">@_metricas.Sum(m => m.TotalRecibidos)</div>
-                    <div class="kpi-nota">@_metricas.Sum(m => m.TotalActivos) siguen abiertos</div>
-                </div>
-            </div>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="Cerrados" Valor="@TotalCerrados.ToString()" Icono="@Icons.Material.Filled.TaskAlt" Acento="cumplido"
+                     Progreso="@Pct(TotalCerrados, TotalRecibidos)" Nota="@($"tasa de cierre {Formato.Porcentaje(TotalCerrados, TotalRecibidos)}")" />
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <div class="kpi kpi--acento-cumplido">
-                <div>
-                    <div class="kpi-etiqueta">Cerrados</div>
-                    <div class="kpi-valor" style="color:var(--op-cumplido)">@_metricas.Sum(m => m.TotalCerrados)</div>
-                    <div class="kpi-nota">
-                        @{ var bal = _metricas.Sum(m => m.TotalCerrados) - _metricas.Sum(m => m.TotalRecibidos); }
-                        Balance @(bal >= 0 ? "+" : "")@bal contra lo recibido
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="Backlog del equipo" Valor="@TotalBacklog.ToString()" Icono="@Icons.Material.Filled.Inbox" Acento="riesgo"
+                     Nota="@($"balance {(TotalCerrados - TotalRecibidos >= 0 ? "+" : "")}{TotalCerrados - TotalRecibidos} contra lo recibido")" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="Órdenes de cambio" Valor="@_metricas.Sum(m => m.OcRecibidas).ToString()" Icono="@Icons.Material.Filled.ChangeCircle" Acento="violeta"
+                     Nota="@($"{_metricas.Sum(m => m.OcCerradas)} cerradas en el período")" TextoAccion="Ver órdenes" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio"))" />
+        </MudItem>
+    </MudGrid>
+
+    @* ===== Ranking del equipo ===== *@
+    <SeccionBloque Titulo="El equipo" Icono="@Icons.Material.Filled.Leaderboard"
+                   Bajada="Ordenado por tickets recibidos · clic en una tarjeta para ver el detalle del analista">
+        <Acciones>
+            <MudToggleGroup T="string" Value="_orden" ValueChanged="@(v => _orden = v)" SelectionMode="SelectionMode.SingleSelection"
+                            Color="Color.Primary" Size="Size.Small" CheckMark="false">
+                <MudToggleItem Value="@("recibidos")">Recibidos</MudToggleItem>
+                <MudToggleItem Value="@("backlog")">Backlog</MudToggleItem>
+                <MudToggleItem Value="@("cierre")">% cierre</MudToggleItem>
+                <MudToggleItem Value="@("oc")">OC</MudToggleItem>
+            </MudToggleGroup>
+        </Acciones>
+    </SeccionBloque>
+
+    <MudGrid Spacing="3" Class="ta-stagger">
+        @{ var rank = 0; }
+        @foreach (var m in MetricasOrdenadas)
+        {
+            // Copia local: el contenido de MudItem se evalúa después del bucle.
+            var posicion = ++rank;
+            var cierre = Pct(m.TotalCerrados, m.TotalRecibidos);
+            <MudItem xs="12" sm="6" lg="4">
+                <div class="@($"ta-analista {(_analistaSel == m.Analista ? "sel" : "")}")" tabindex="0" role="button"
+                     @onclick="@(() => Seleccionar(m.Analista))" @onkeydown="@(e => e.Key is "Enter" or " " ? Seleccionar(m.Analista) : Task.CompletedTask)">
+                    <span class="rank">#@posicion</span>
+                    <div class="cab">
+                        <span class="ta-avatar" style="@($"background:{Formato.ColorAvatar(m.Analista)}")">@Formato.Iniciales(m.Analista)</span>
+                        <div style="min-width:0">
+                            <div class="nombre">@m.Analista</div>
+                            <div class="rol">@m.PromedioRecibidosDia recibidos/día · @m.PromedioCerradosDia cerrados/día</div>
+                        </div>
+                    </div>
+                    <div class="metricas">
+                        <div><b><AnimatedNumber Valor="m.TotalRecibidos" /></b><span>Recibidos</span></div>
+                        <div><b><AnimatedNumber Valor="m.TotalCerrados" /></b><span>Cerrados</span></div>
+                        <div><b style="@(m.TotalActivos > 0 ? "color:var(--op-riesgo)" : "")"><AnimatedNumber Valor="m.TotalActivos" /></b><span>Backlog</span></div>
+                        <div><b><AnimatedNumber Valor="m.OcRecibidas" /></b><span>OC</span></div>
+                    </div>
+                    <div class="pie">
+                        <div style="flex:1">
+                            <div class="d-flex justify-space-between" style="font-size:.72rem">
+                                <span class="ta-muted">Cierre</span>
+                                <b style="@($"color:{ColorCierre(cierre)}")">@cierre.ToString("0")%</b>
+                            </div>
+                            <div class="kpi-prog" style="@($"--kpi-color:{ColorCierre(cierre)}")"><span style="@($"--w:{Math.Min(100, cierre).ToString(System.Globalization.CultureInfo.InvariantCulture)}%")"></span></div>
+                        </div>
+                        @if (_series.TryGetValue(m.Analista, out var serie) && serie.Count > 1)
+                        {
+                            <svg class="kpi-spark" viewBox="0 0 100 30" preserveAspectRatio="none" aria-label="Tendencia de tickets recibidos">
+                                <polyline class="linea" points="@Puntos(serie)" fill="none" stroke="@Formato.ColorAvatar(m.Analista)" stroke-width="2"
+                                          stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                            </svg>
+                        }
                     </div>
                 </div>
-            </div>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <div class="kpi kpi--acento-riesgo">
-                <div>
-                    <div class="kpi-etiqueta">Pendientes de seguimiento</div>
-                    <div class="kpi-valor" style="color:var(--op-riesgo)">@_metricas.Sum(m => m.CasosPendientesSeguimiento)</div>
-                    <div class="kpi-nota">@_metricas.Sum(m => m.CasosEnEsperaProveedor) en espera del proveedor</div>
+            </MudItem>
+        }
+    </MudGrid>
+
+    @* ===== Detalle del analista seleccionado ===== *@
+    @if (_detalle is not null)
+    {
+        <div class="panel mt-4 ta-enter" id="detalle-analista" style="@($"border-left:4px solid {Formato.ColorAvatar(_detalle.Analista)}")">
+            <div class="d-flex justify-space-between align-center mb-3 flex-wrap gap-2">
+                <div class="d-flex align-center gap-3">
+                    <span class="ta-avatar" style="@($"background:{Formato.ColorAvatar(_detalle.Analista)};width:48px;height:48px")">@Formato.Iniciales(_detalle.Analista)</span>
+                    <div>
+                        <MudText Typo="Typo.h6" Style="font-weight:650">@_detalle.Analista</MudText>
+                        <MudText Typo="Typo.caption" Class="ta-muted">Detalle del período seleccionado</MudText>
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.ConfirmationNumber"
+                               Href="@UrlQuery.Url("/tickets", ("vista", "abiertos"), ("asignatario", _detalle.Analista))">Ver sus tickets</MudButton>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" aria-label="Cerrar detalle" OnClick="@(() => Seleccionar(null))" />
                 </div>
             </div>
-        </MudItem>
-    </MudGrid>
 
-    <MudGrid Spacing="3" Class="mb-4">
+            <MudGrid Spacing="3" Class="mb-3 ta-stagger">
+                <MudItem xs="6" md="3"><KpiCard Titulo="Tickets recibidos" Valor="@_detalle.TotalRecibidos.ToString()" Icono="@Icons.Material.Filled.MoveToInbox" Acento="azul" Nota="@($"{_detalle.PromedioRecibidosDia}/día con actividad")" Sparkline="@SerieDe(_detalle.Analista)" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Tickets cerrados" Valor="@_detalle.TotalCerrados.ToString()" Icono="@Icons.Material.Filled.CheckCircle" Acento="cumplido" Progreso="@Pct(_detalle.TotalCerrados, _detalle.TotalRecibidos)" Nota="@($"{_detalle.PromedioCerradosDia}/día · cierre {Formato.Porcentaje(_detalle.TotalCerrados, _detalle.TotalRecibidos)}")" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Backlog" Valor="@_detalle.TotalActivos.ToString()" Icono="@Icons.Material.Filled.Inbox" Acento="riesgo" Nota="tickets abiertos ahora" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Resolución promedio" Valor="@($"{_detalle.PromedioHorasResolucion:0.#}h")" Icono="@Icons.Material.Filled.Timelapse" Acento="neutro" Nota="@($"≈ {_detalle.PromedioHorasResolucion / 24:0.#} días por ticket cerrado")" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="OC recibidas" Valor="@_detalle.OcRecibidas.ToString()" Icono="@Icons.Material.Filled.ChangeCircle" Acento="azul" Nota="@($"{_detalle.OcCerradas} cerradas")" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Actualizaciones" Valor="@_detalle.ActualizacionesRealizadas.ToString()" Icono="@Icons.Material.Filled.History" Acento="violeta" Nota="gestiones registradas en el período" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Pend. seguimiento" Valor="@_detalle.CasosPendientesSeguimiento.ToString()" Icono="@Icons.Material.Filled.PendingActions" Acento="riesgo" Nota="pasó su próximo seguimiento" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Espera proveedor" Valor="@_detalle.CasosEnEsperaProveedor.ToString()" Icono="@Icons.Material.Filled.Business" Acento="neutro" /></MudItem>
+            </MudGrid>
+
+            <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-3">
+                <MudTabPanel Text="Tickets del analista" Icon="@Icons.Material.Filled.ConfirmationNumber">
+                    <PanelTecnico Tecnico="@_detalle.Analista" EsOrdenCambio="false" VistaInicial="abiertas"
+                                  OnCerrar="@(() => Seleccionar(null))" />
+                </MudTabPanel>
+                <MudTabPanel Text="Órdenes de cambio" Icon="@Icons.Material.Filled.ChangeCircle">
+                    <PanelTecnico Tecnico="@_detalle.Analista" EsOrdenCambio="true" VistaInicial="mes"
+                                  OnCerrar="@(() => Seleccionar(null))" />
+                </MudTabPanel>
+            </MudTabs>
+        </div>
+    }
+
+    @* ===== Comparativos ===== *@
+    <SeccionBloque Titulo="Comparativo" Icono="@Icons.Material.Filled.BarChart" Bajada="Clic en una barra para abrir el detalle del analista" />
+    <MudGrid Spacing="3">
         <MudItem xs="12" md="7">
-            <div class="panel">
-                <h2 class="panel-titulo">
-                    <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Small" Color="Color.Primary" />
-                    Recibidos contra cerrados
-                </h2>
-                <ApexChart TItem="PuntoAnalista" Options="@_opcionesBarras" Height="320">
-                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Recibidos"
-                                     XValue="@(p => p.Analista)" YValue="@(p => p.Recibidos)" SeriesType="SeriesType.Bar" />
-                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Cerrados"
-                                     XValue="@(p => p.Analista)" YValue="@(p => p.Cerrados)" SeriesType="SeriesType.Bar" />
+            <ChartPanel Titulo="Recibidos contra cerrados" Icono="@Icons.Material.Filled.BarChart" Clicable="true" Nota="Clic en un analista para ver su detalle">
+                <ApexChart TItem="PuntoAnalista" Options="_opcionesBarras" Height="330"
+                           OnDataPointSelection="@((SelectedData<PuntoAnalista> e) => Seleccionar(e.DataPoint?.Items?.FirstOrDefault()?.Nombre))">
+                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Recibidos" XValue="@(p => p.Analista)" YValue="@(p => p.Recibidos)" SeriesType="SeriesType.Bar" />
+                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Cerrados" XValue="@(p => p.Analista)" YValue="@(p => p.Cerrados)" SeriesType="SeriesType.Bar" />
+                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Backlog" XValue="@(p => p.Analista)" YValue="@(p => p.Backlog)" SeriesType="SeriesType.Bar" />
                 </ApexChart>
-            </div>
+            </ChartPanel>
         </MudItem>
         <MudItem xs="12" md="5">
-            <div class="panel">
-                <h2 class="panel-titulo">
-                    <MudIcon Icon="@Icons.Material.Filled.Speed" Size="Size.Small" Color="Color.Primary" />
-                    Ritmo diario
-                </h2>
-                <ApexChart TItem="PuntoAnalista" Options="@_opcionesRitmo" Height="320">
-                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Recibidos/día"
-                                     XValue="@(p => p.Analista)" YValue="@(p => p.PromRecibidos)" SeriesType="SeriesType.Bar" />
-                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Cerrados/día"
-                                     XValue="@(p => p.Analista)" YValue="@(p => p.PromCerrados)" SeriesType="SeriesType.Bar" />
+            <ChartPanel Titulo="Ritmo diario" Icono="@Icons.Material.Filled.Speed" Nota="Promedio sobre días con actividad real, no días calendario.">
+                <ApexChart TItem="PuntoAnalista" Options="_opcionesRitmo" Height="330">
+                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Recibidos/día" XValue="@(p => p.Analista)" YValue="@(p => p.PromRecibidos)" SeriesType="SeriesType.Bar" />
+                    <ApexPointSeries TItem="PuntoAnalista" Items="_grafico" Name="Cerrados/día" XValue="@(p => p.Analista)" YValue="@(p => p.PromCerrados)" SeriesType="SeriesType.Bar" />
                 </ApexChart>
-                <MudText Typo="Typo.caption" Style="color:var(--texto-secundario)">
-                    Promedio sobre días con actividad real, no días calendario.
-                </MudText>
-            </div>
+            </ChartPanel>
         </MudItem>
     </MudGrid>
 
-    <!-- Detalle por analista -->
-    <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="panel mt-2">
-        <MudTabPanel Text="Tickets" Icon="@Icons.Material.Filled.ConfirmationNumber">
-            <MudTable Items="_metricas" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md">
-                <HeaderContent>
-                    <MudTh><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.Analista)">Analista</MudTableSortLabel></MudTh>
-                    <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.TotalRecibidos)" InitialDirection="SortDirection.Descending">Recibidos</MudTableSortLabel></MudTh>
-                    <MudTh Style="text-align:right">Días</MudTh>
-                    <MudTh Style="text-align:right">Prom/día</MudTh>
-                    <MudTh Style="text-align:right">Cerrados</MudTh>
-                    <MudTh Style="text-align:right">Días</MudTh>
-                    <MudTh Style="text-align:right">Prom/día</MudTh>
-                    <MudTh Style="text-align:right">Abiertos</MudTh>
-                    <MudTh>Balance</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Analista"><b>@context.Analista</b></MudTd>
-                    <MudTd DataLabel="Recibidos" Style="text-align:right">@context.TotalRecibidos</MudTd>
-                    <MudTd DataLabel="Días apertura" Style="text-align:right">@context.DiasConApertura</MudTd>
-                    <MudTd DataLabel="Prom recibidos" Style="text-align:right"><b>@context.PromedioRecibidosDia</b></MudTd>
-                    <MudTd DataLabel="Cerrados" Style="text-align:right">@context.TotalCerrados</MudTd>
-                    <MudTd DataLabel="Días cierre" Style="text-align:right">@context.DiasConCierre</MudTd>
-                    <MudTd DataLabel="Prom cerrados" Style="text-align:right"><b>@context.PromedioCerradosDia</b></MudTd>
-                    <MudTd DataLabel="Abiertos" Style="text-align:right">@context.TotalActivos</MudTd>
-                    <MudTd DataLabel="Balance">
-                        @{ var b = context.TotalCerrados - context.TotalRecibidos; }
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(b >= 0 ? Color.Success : Color.Warning)">
-                            @(b >= 0 ? "+" : "")@b
-                        </MudChip>
-                    </MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudTabPanel>
+    @* ===== Tablas completas ===== *@
+    <SeccionBloque Titulo="Detalle en tabla" Icono="@Icons.Material.Filled.TableChart" Bajada="Todas las métricas, ordenables por columna" />
+    <div class="panel">
+        <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-2">
+            <MudTabPanel Text="Tickets" Icon="@Icons.Material.Filled.ConfirmationNumber">
+                <MudTable Items="_metricas" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" Class="ta-tabla-click" T="MetricaAnalistaDto"
+                          OnRowClick="@((TableRowClickEventArgs<MetricaAnalistaDto> a) => Seleccionar(a.Item!.Analista))">
+                    <HeaderContent>
+                        <MudTh><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.Analista)">Analista</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.TotalRecibidos)" InitialDirection="SortDirection.Descending">Recibidos</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.PromedioRecibidosDia)">Prom/día</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.TotalCerrados)">Cerrados</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.PromedioCerradosDia)">Prom/día</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.TotalActivos)">Backlog</MudTableSortLabel></MudTh>
+                        <MudTh Style="text-align:right"><MudTableSortLabel SortBy="new Func<MetricaAnalistaDto,object>(x=>x.PromedioHorasResolucion)">Resolución</MudTableSortLabel></MudTh>
+                        <MudTh>Balance</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Analista">
+                            <div class="d-flex align-center gap-2">
+                                <span class="ta-avatar sm" style="@($"background:{Formato.ColorAvatar(context.Analista)}")">@Formato.Iniciales(context.Analista)</span>
+                                <b>@context.Analista</b>
+                            </div>
+                        </MudTd>
+                        <MudTd DataLabel="Recibidos" Style="text-align:right">@context.TotalRecibidos</MudTd>
+                        <MudTd DataLabel="Prom recibidos" Style="text-align:right">@context.PromedioRecibidosDia</MudTd>
+                        <MudTd DataLabel="Cerrados" Style="text-align:right">@context.TotalCerrados</MudTd>
+                        <MudTd DataLabel="Prom cerrados" Style="text-align:right">@context.PromedioCerradosDia</MudTd>
+                        <MudTd DataLabel="Backlog" Style="text-align:right">@context.TotalActivos</MudTd>
+                        <MudTd DataLabel="Resolución" Style="text-align:right">@Formato.Horas(context.PromedioHorasResolucion)</MudTd>
+                        <MudTd DataLabel="Balance">
+                            @{ var b = context.TotalCerrados - context.TotalRecibidos; }
+                            <span class="@($"ta-tag {(b >= 0 ? "ok" : "warn")}")">@(b >= 0 ? "+" : "")@b</span>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudTabPanel>
 
-        <MudTabPanel Text="Órdenes de cambio" Icon="@Icons.Material.Filled.ChangeCircle">
-            <MudTable Items="_metricas.Where(m => m.OcRecibidas > 0 || m.OcCerradas > 0)" Dense="true" Hover="true" Elevation="0">
-                <HeaderContent>
-                    <MudTh>Analista</MudTh>
-                    <MudTh Style="text-align:right">Recibidas</MudTh>
-                    <MudTh Style="text-align:right">Prom/día</MudTh>
-                    <MudTh Style="text-align:right">Cerradas</MudTh>
-                    <MudTh Style="text-align:right">Prom/día</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Analista"><b>@context.Analista</b></MudTd>
-                    <MudTd DataLabel="Recibidas" Style="text-align:right">@context.OcRecibidas</MudTd>
-                    <MudTd DataLabel="Prom recibidas" Style="text-align:right">@context.OcPromedioRecibidasDia</MudTd>
-                    <MudTd DataLabel="Cerradas" Style="text-align:right">@context.OcCerradas</MudTd>
-                    <MudTd DataLabel="Prom cerradas" Style="text-align:right">@context.OcPromedioCerradasDia</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudTabPanel>
+            <MudTabPanel Text="Órdenes de cambio" Icon="@Icons.Material.Filled.ChangeCircle">
+                <MudTable Items="_metricas.Where(m => m.OcRecibidas > 0 || m.OcCerradas > 0)" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Analista</MudTh>
+                        <MudTh Style="text-align:right">Recibidas</MudTh>
+                        <MudTh Style="text-align:right">Prom/día</MudTh>
+                        <MudTh Style="text-align:right">Cerradas</MudTh>
+                        <MudTh Style="text-align:right">Prom/día</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Analista"><b>@context.Analista</b></MudTd>
+                        <MudTd DataLabel="Recibidas" Style="text-align:right">@context.OcRecibidas</MudTd>
+                        <MudTd DataLabel="Prom recibidas" Style="text-align:right">@context.OcPromedioRecibidasDia</MudTd>
+                        <MudTd DataLabel="Cerradas" Style="text-align:right">@context.OcCerradas</MudTd>
+                        <MudTd DataLabel="Prom cerradas" Style="text-align:right">@context.OcPromedioCerradasDia</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><EmptyState Mensaje="Sin órdenes de cambio en el período." /></NoRecordsContent>
+                </MudTable>
+            </MudTabPanel>
 
-        <MudTabPanel Text="Seguimiento" Icon="@Icons.Material.Filled.Assignment">
-            <MudTable Items="_metricas" Dense="true" Hover="true" Elevation="0">
-                <HeaderContent>
-                    <MudTh>Analista</MudTh>
-                    <MudTh Style="text-align:right">Pendientes</MudTh>
-                    <MudTh Style="text-align:right">En espera proveedor</MudTh>
-                    <MudTh Style="text-align:right">Actualizaciones</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Analista"><b>@context.Analista</b></MudTd>
-                    <MudTd DataLabel="Pendientes" Style="text-align:right">
-                        @if (context.CasosPendientesSeguimiento > 0)
-                        {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">@context.CasosPendientesSeguimiento</MudChip>
-                        }
-                        else { <span style="color:var(--texto-tenue)">0</span> }
-                    </MudTd>
-                    <MudTd DataLabel="Espera proveedor" Style="text-align:right">@context.CasosEnEsperaProveedor</MudTd>
-                    <MudTd DataLabel="Actualizaciones" Style="text-align:right">@context.ActualizacionesRealizadas</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudTabPanel>
-    </MudTabs>
+            <MudTabPanel Text="Seguimiento" Icon="@Icons.Material.Filled.Assignment">
+                <MudTable Items="_metricas" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Analista</MudTh>
+                        <MudTh Style="text-align:right">Pendientes</MudTh>
+                        <MudTh Style="text-align:right">En espera proveedor</MudTh>
+                        <MudTh Style="text-align:right">Actualizaciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Analista"><b>@context.Analista</b></MudTd>
+                        <MudTd DataLabel="Pendientes" Style="text-align:right">
+                            @if (context.CasosPendientesSeguimiento > 0) { <span class="ta-tag warn">@context.CasosPendientesSeguimiento</span> }
+                            else { <span class="ta-tenue">0</span> }
+                        </MudTd>
+                        <MudTd DataLabel="Espera proveedor" Style="text-align:right">@context.CasosEnEsperaProveedor</MudTd>
+                        <MudTd DataLabel="Actualizaciones" Style="text-align:right">@context.ActualizacionesRealizadas</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudTabPanel>
+        </MudTabs>
+    </div>
+    </div>
 }
 
-<div class="panel mt-4">
-    <h2 class="panel-titulo mb-1"><MudIcon Icon="@Icons.Material.Filled.NotificationsActive" Size="Size.Small" Color="Color.Primary" /> Bandeja del equipo — tickets por vencer</h2>
-    <p class="seccion-bajada mb-3">Qué tiene cada analista abierto, con alertas de vencimiento por su Incumplimiento previsto</p>
-    <BandejaVencimientos Analista="_analistaSel" />
+<SeccionBloque Id="bandeja-equipo" Titulo="Bandeja del equipo · tickets por vencer" Icono="@Icons.Material.Filled.NotificationsActive"
+               Bajada="Qué tiene cada analista abierto, con alertas por su incumplimiento previsto" />
+<div class="panel">
+    <BandejaVencimientos Analista="@_analistaSel" />
 </div>
 
 @code {
     private TicketFiltro _filtro = new();
     private List<MetricaAnalistaDto> _metricas = new();
     private List<PuntoAnalista> _grafico = new();
+    private Dictionary<string, List<double>> _series = new();
     private bool _cargando = true;
+    private string? _error;
+    private DateTime? _ultimaCarga;
+    private int _version;
+    private string _orden = "recibidos";
 
-    private ApexChartOptions<PuntoAnalista> _opcionesBarras = new();
-    private ApexChartOptions<PuntoAnalista> _opcionesRitmo = new();
+    private string? _analistaSel;
+    private MetricaAnalistaDto? _detalle;
+
+    private readonly ApexChartOptions<PuntoAnalista> _opcionesBarras =
+        ChartTheme.Barras<PuntoAnalista>(new() { ChartTheme.Azul, ChartTheme.Verde, ChartTheme.Ambar }, horizontal: true);
+    private readonly ApexChartOptions<PuntoAnalista> _opcionesRitmo =
+        ChartTheme.Barras<PuntoAnalista>(new() { ChartTheme.AzulProfundo, ChartTheme.Verde });
 
     public class PuntoAnalista
     {
         public string Analista { get; set; } = "";
+        public string Nombre { get; set; } = "";
         public decimal Recibidos { get; set; }
         public decimal Cerrados { get; set; }
+        public decimal Backlog { get; set; }
         public decimal PromRecibidos { get; set; }
         public decimal PromCerrados { get; set; }
     }
 
-    protected override void OnInitialized()
+    private int TotalRecibidos => _metricas.Sum(m => m.TotalRecibidos);
+    private int TotalCerrados => _metricas.Sum(m => m.TotalCerrados);
+    private int TotalBacklog => _metricas.Sum(m => m.TotalActivos);
+
+    private IEnumerable<MetricaAnalistaDto> MetricasOrdenadas => _orden switch
     {
-        _opcionesBarras = new ApexChartOptions<PuntoAnalista>
-        {
-            Chart = new Chart { Toolbar = new Toolbar { Show = false } },
-            Colors = new List<string> { "#15528E", "#76B82A" },
-            PlotOptions = new PlotOptions { Bar = new PlotOptionsBar { Horizontal = true } },
-            DataLabels = new ApexCharts.DataLabels { Enabled = false },
-            Legend = new Legend { Position = LegendPosition.Top }
-        };
-        _opcionesRitmo = new ApexChartOptions<PuntoAnalista>
-        {
-            Chart = new Chart { Toolbar = new Toolbar { Show = false } },
-            Colors = new List<string> { "#0F3D6B", "#76B82A" },
-            DataLabels = new ApexCharts.DataLabels { Enabled = false },
-            Legend = new Legend { Position = LegendPosition.Top }
-        };
-    }
+        "backlog" => _metricas.OrderByDescending(m => m.TotalActivos),
+        "cierre" => _metricas.OrderByDescending(m => Pct(m.TotalCerrados, m.TotalRecibidos)),
+        "oc" => _metricas.OrderByDescending(m => m.OcRecibidas),
+        _ => _metricas.OrderByDescending(m => m.TotalRecibidos)
+    };
 
     protected override async Task OnInitializedAsync()
     {
+        var q = UrlQuery.Leer(Nav);
+        if (q.TryGetValue("analista", out var a)) _analistaSel = a;
         await Cargar();
-    }
-
-    private bool _debeRenderizar = true;
-    protected override bool ShouldRender()
-    {
-        if (_debeRenderizar) { _debeRenderizar = false; return true; }
-        return false;
-    }
-    private void Render() { _debeRenderizar = true; StateHasChanged(); }
-
-    private string? _analistaSel;
-    private MetricaAnalistaDto? _detalle;
-    private List<PuntoAnalista> _detalleGrafico = new();
-    private ApexChartOptions<PuntoAnalista> _opcionesDetalle = new()
-    {
-        Chart = new Chart { Toolbar = new Toolbar { Show = false } },
-        Colors = new List<string> { "#15528E", "#76B82A" },
-        DataLabels = new ApexCharts.DataLabels { Enabled = false },
-        Legend = new Legend { Position = LegendPosition.Top }
-    };
-
-    private void OnAnalistaSeleccionado(string? analista)
-    {
-        _analistaSel = analista;
-        _detalle = string.IsNullOrEmpty(analista) ? null : _metricas.FirstOrDefault(m => m.Analista == analista);
-        if (_detalle is not null)
-        {
-            _detalleGrafico = new()
-            {
-                new PuntoAnalista { Analista = "Recibidos/día", Recibidos = _detalle.PromedioRecibidosDia },
-                new PuntoAnalista { Analista = "Cerrados/día", Recibidos = _detalle.PromedioCerradosDia }
-            };
-        }
-        Render();
-    }
-
-    private static string Iniciales(string nombre)
-    {
-        var p = nombre.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return p.Length >= 2 ? $"{p[0][0]}{p[^1][0]}" : nombre.Length >= 2 ? nombre[..2] : nombre;
+        if (_detalle is not null) await Ui.IrAAsync("detalle-analista");
     }
 
     private async Task Cargar()
     {
-        _cargando = true; Render();
+        _cargando = true;
+        _error = null;
+        StateHasChanged();
         try
         {
+            // (Diario TI desactivado: ya no se consultan las horas registradas.)
             _metricas = await Api.MetricasAnalistaAsync(_filtro);
+
             _grafico = _metricas.OrderByDescending(m => m.TotalRecibidos).Take(10).Select(m => new PuntoAnalista
             {
-                Analista = Acortar(m.Analista),
+                Analista = Formato.NombreCorto(m.Analista),
+                Nombre = m.Analista,
                 Recibidos = m.TotalRecibidos,
                 Cerrados = m.TotalCerrados,
+                Backlog = m.TotalActivos,
                 PromRecibidos = m.PromedioRecibidosDia,
                 PromCerrados = m.PromedioCerradosDia
             }).ToList();
+
+            // Tendencia mensual de cada analista para su sparkline (en paralelo, tolerante a fallos).
+            var tareas = _metricas.Select(async m =>
+            {
+                try
+                {
+                    var f = ClonarFiltro(m.Analista);
+                    var t = await Api.TendenciasAsync(f, "mes");
+                    return (m.Analista, Serie: t.GroupBy(x => x.Periodo).OrderBy(g => g.Key).Select(g => (double)g.Sum(x => x.Abiertos)).ToList());
+                }
+                catch { return (m.Analista, Serie: new List<double>()); }
+            });
+            _series = (await Task.WhenAll(tareas)).ToDictionary(x => x.Analista, x => x.Serie);
+
+            _detalle = _analistaSel is null ? null : _metricas.FirstOrDefault(m => m.Analista == _analistaSel);
+            _ultimaCarga = DateTime.Now;
+            _version++;
         }
-        finally { _cargando = false; Render(); }
+        catch (ApiException ex) { _error = ex.MensajeUsuario; }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _cargando = false; StateHasChanged(); }
     }
 
-    private static string Acortar(string n)
+    private TicketFiltro ClonarFiltro(string analista) => new()
     {
-        var p = n.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return p.Length >= 2 ? $"{p[0]} {p[^1]}" : n;
+        FechaDesde = _filtro.FechaDesde, FechaHasta = _filtro.FechaHasta, TipoCaso = _filtro.TipoCaso,
+        EstadoSla = _filtro.EstadoSla, AsignatarioNombre = analista
+    };
+
+    private async Task Seleccionar(string? analista)
+    {
+        _analistaSel = string.IsNullOrWhiteSpace(analista) || _analistaSel == analista ? null : analista;
+        _detalle = _analistaSel is null ? null : _metricas.FirstOrDefault(m => m.Analista == _analistaSel);
+        StateHasChanged();
+        if (_detalle is not null)
+        {
+            await Task.Yield();
+            await Ui.IrAAsync("detalle-analista");
+        }
+    }
+
+    private List<double>? SerieDe(string analista) => _series.TryGetValue(analista, out var s) && s.Count > 1 ? s : null;
+
+    private static double Pct(int parte, int total) => total <= 0 ? 0 : Math.Round(parte * 100.0 / total, 1);
+
+    private static string ColorCierre(double p) => p >= 80 ? "var(--op-cumplido)" : p >= 50 ? "var(--op-riesgo)" : "var(--op-vencido)";
+
+    private static string Puntos(List<double> s)
+    {
+        double min = s.Min(), max = s.Max();
+        var rango = Math.Abs(max - min) < 0.0001 ? 1 : max - min;
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return string.Join(" ", s.Select((v, i) =>
+            $"{(i * 100.0 / (s.Count - 1)).ToString("0.##", ci)},{(27 - (v - min) / rango * 24).ToString("0.##", ci)}"));
     }
 }

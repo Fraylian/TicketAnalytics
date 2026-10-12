@@ -40,6 +40,17 @@ public static class OrdenCambioEndpoints
             Results.Ok(await svc.ControlVencimientosAsync(f, ct)))
          .WithSummary("Sección Control de vencimientos: KPIs, distribución y 'Vencen primero'.");
 
+        g.MapPost("/excel", async (OrdenCambioFiltro f, IOrdenCambioDashboardService svc, ILoggerFactory lf, CancellationToken ct) =>
+        {
+            var reloj = System.Diagnostics.Stopwatch.StartNew();
+            var ordenes = await svc.BuscarTodasAsync(f, ct);
+            var contexto = Services.ContextoExport.Oc(f);
+            var bytes = Services.ListadosExcel.OrdenesCambio(ordenes, contexto);
+            lf.CreateLogger("Exportaciones").LogInformation(
+                "Excel de OC: {Filas} filas, {Bytes} bytes en {Ms} ms", ordenes.Count, bytes.Length, reloj.ElapsedMilliseconds);
+            return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"Ordenes_Cambio_{DateTime.Now:yyyyMMdd_HHmm}.xlsx");
+        }).WithSummary("Excel (.xlsx) con TODAS las órdenes de cambio que cumplen el filtro.");
+
         g.MapPost("/analistas", async (OrdenCambioFiltro f, IOrdenCambioDashboardService svc, CancellationToken ct) =>
             Results.Ok(await svc.AnalistasConOcAsync(f, ct)))
          .WithSummary("Analistas con OC en el alcance, para el selector de filtro.");

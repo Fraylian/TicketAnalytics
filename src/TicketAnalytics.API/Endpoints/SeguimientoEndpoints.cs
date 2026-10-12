@@ -42,6 +42,10 @@ public static class SeguimientoEndpoints
             Results.Ok(await s.HistorialAsync(refNum, ct)))
          .WithSummary("Historial cronológico completo del seguimiento.");
 
+        g.MapPost("/resumen", async (TicketFiltro f, ISeguimientoService s, CancellationToken ct) =>
+            Results.Ok(await s.ResumenAsync(f, ct)))
+         .WithSummary("Conteos de la bandeja (total, con JIRA, con proveedor, requieren atención…) para los filtros dados.");
+
         g.MapPost("/buscar", async (TicketFiltro f, ISeguimientoService s, CancellationToken ct) =>
             Results.Ok(await s.BuscarAsync(f, ct)))
          .WithSummary("Busca seguimientos por etapa, proveedor, JIRA, sin actualización reciente, etc.");

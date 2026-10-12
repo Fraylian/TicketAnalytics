@@ -1,75 +1,242 @@
+@* Detalle del ticket: cabecera con estado, acciones rápidas, estado de la gestión
+   (proveedor, JIRA, Reporte VP, causa raíz), datos del caso y su orden de cambio. *@
+@inject IDialogService DialogService
+@inject TicketAnalyticsApi Api
+@inject UiService Ui
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
 <MudDialog>
     <DialogContent>
-        <MudGrid Spacing="2">
-            <MudItem xs="12">
-                <div class="d-flex gap-2 align-center mb-2">
-                    <MudChip T="string" Size="Size.Small" Color="@(Ticket.TipoCaso == "Incidente" ? Color.Error : Color.Primary)">@Ticket.TipoCaso</MudChip>
-                    <MudText Typo="Typo.h6">@Ticket.NoTicket</MudText>
-                    <MudSpacer />
-                    <MudChip T="string" Size="Size.Small" Color="@(Ticket.ResueltoDentroSLA == "SI" ? Color.Success : Ticket.ResueltoDentroSLA == "NO" ? Color.Error : Color.Default)">SLA: @Ticket.ResueltoDentroSLA</MudChip>
-                </div>
-            </MudItem>
-            <MudItem xs="12"><MudDivider /></MudItem>
-            <Campo Label="Categoría" Valor="@Ticket.Categoria" />
-            <Campo Label="Estado" Valor="@Ticket.Estado" />
-            <Campo Label="Usuario final afectado" Valor="@Ticket.UsuarioFinalAfectado" />
-            <Campo Label="Asignatario" Valor="@Ticket.Asignatario" />
-            <Campo Label="Grupo" Valor="@Ticket.Grupo" />
-            <Campo Label="Fecha de apertura" Valor="@Ticket.FechaApertura?.ToString("dd/MM/yyyy HH:mm")" />
-            <Campo Label="Fecha cierre solicitado" Valor="@Ticket.FechaCierreSolicitado?.ToString("dd/MM/yyyy HH:mm")" />
-            <MudItem xs="12">
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">Descripción</MudText>
-                <MudText Typo="Typo.body2">@Ticket.Descripcion</MudText>
-            </MudItem>
-
-            @if (Ticket.TieneOrdenCambio)
+        <div class="ta-detalle-cab mb-3">
+            <span class="@($"ta-tag {(Ticket.TipoCaso == "Incidente" ? "err" : "info")}")">@Ticket.TipoCaso</span>
+            <span class="ref">@Ticket.NoTicket</span>
+            <span class="ta-tag">@(Ticket.Estado ?? "Sin estado")</span>
+            <MudSpacer />
+            @if (Ticket.FechaVencimiento.HasValue && Ticket.EstadoVencimiento is not ("cerrado" or "sin_fecha"))
             {
-                <MudItem xs="12" Class="mt-2">
-                    <MudPaper Class="@OcCardClass" Elevation="0" Outlined="true">
-                        <MudText Typo="Typo.subtitle2" Class="mb-2">
-                            <MudIcon Icon="@Icons.Material.Filled.ChangeCircle" Size="Size.Small" /> Orden de cambio @Ticket.NoOC
-                        </MudText>
-                        @if (Ticket.ReqCerradoConCambioPendiente)
-                        {
-                            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">Ticket cerrado, pero la orden de cambio sigue pendiente.</MudAlert>
-                        }
-                        <MudGrid Spacing="2">
-                            <Campo Label="Estado OC" Valor="@Ticket.EstadoOC" />
-                            <Campo Label="Asignatario OC" Valor="@Ticket.AsignatarioOC" />
-                            <Campo Label="Apertura OC" Valor="@Ticket.FechaAperturaOC?.ToString("dd/MM/yyyy")" />
-                            <Campo Label="Cierre OC" Valor="@Ticket.FechaCierreSolicitadoOC?.ToString("dd/MM/yyyy")" />
-                            <Campo Label="Complejidad OC" Valor="@(Ticket.ComplejidadOC ?? "Sin asignar")" />
-                            <Campo Label="OC dentro de SLA" Valor="@Ticket.OCResueltoDentroSLA" />
-                        </MudGrid>
-                    </MudPaper>
-                </MudItem>
+                <EstadoVencimientoChip Estado="@Ticket.EstadoVencimiento" DiasRestantes="@Ticket.DiasParaVencer" />
             }
-        </MudGrid>
+            <span class="@($"ta-tag {(Ticket.ResueltoDentroSLA == "SI" ? "ok" : Ticket.ResueltoDentroSLA == "NO" ? "err" : "")}")">
+                SLA: @(Ticket.ResueltoDentroSLA switch { "SI" => "dentro", "NO" => "fuera", "EN CURSO" => "en curso", _ => Ticket.ResueltoDentroSLA })
+            </span>
+        </div>
+
+        @* ===== Acciones rápidas ===== *@
+        <div class="ta-acciones-rapidas mb-4">
+            <button type="button" class="ta-accion" @onclick="@(() => AbrirGestion(0))">
+                <MudIcon Icon="@Icons.Material.Filled.EditNote" /> Registrar gestión
+            </button>
+            <button type="button" class="ta-accion" @onclick="AgregarAlVP">
+                <MudIcon Icon="@Icons.Material.Filled.Summarize" /> @(_seg?.VaReporteVP == true ? "Editar en VP" : "Agregar al VP")
+            </button>
+            <button type="button" class="ta-accion" @onclick="Copiar">
+                <MudIcon Icon="@(_copiado ? Icons.Material.Filled.Check : Icons.Material.Filled.ContentCopy)" /> @(_copiado ? "¡Copiado!" : "Copiar ticket")
+            </button>
+            <button type="button" class="ta-accion" disabled="@(!Ticket.TieneOrdenCambio)" @onclick="IrAOc"
+                    title="@(Ticket.TieneOrdenCambio ? $"Abrir la OC {Ticket.NoOC}" : "Este ticket no tiene orden de cambio")">
+                <MudIcon Icon="@Icons.Material.Filled.ChangeCircle" /> Ir a la OC
+            </button>
+            <button type="button" class="ta-accion" @onclick="VerTimeline">
+                <MudIcon Icon="@Icons.Material.Filled.Timeline" /> Ver timeline
+            </button>
+        </div>
+
+        @* ===== Estado de la gestión ===== *@
+        <MudText Typo="Typo.overline" Class="ta-tenue">Gestión del caso</MudText>
+        @if (_cargandoSeg)
+        {
+            <MudSkeleton Height="32px" Width="70%" Animation="Animation.Wave" />
+        }
+        else if (_seg is null)
+        {
+            <div class="d-flex align-center gap-2 mb-3">
+                <span class="ta-tag warn"><MudIcon Icon="@Icons.Material.Filled.Info" Style="font-size:14px" /> Sin gestión registrada</span>
+                <span class="ta-muted" style="font-size:.8rem">Usa "Registrar gestión" para documentar el caso.</span>
+            </div>
+        }
+        else
+        {
+            <div class="ta-estado-gestion mb-1">
+                <span class="ta-tag info"><MudIcon Icon="@Icons.Material.Filled.Flag" Style="font-size:14px" /> @_seg.EtapaActualTexto</span>
+                <span class="@($"ta-tag {(_seg.ReportadoProveedor == 1 ? "ok" : _seg.ReportadoProveedor == 2 ? "warn" : "")}")">
+                    <MudIcon Icon="@Icons.Material.Filled.Business" Style="font-size:14px" />
+                    Proveedor: @(_seg.ReportadoProveedor switch { 1 => "reportado", 2 => "pendiente", _ => "no requiere" })
+                </span>
+                <span class="@($"ta-tag {(_seg.Jiras.Any() ? "info" : "")}")">
+                    <MudIcon Icon="@Icons.Material.Filled.BugReport" Style="font-size:14px" />
+                    @(_seg.Jiras.Any() ? string.Join(", ", _seg.Jiras.Select(j => j.ClaveJira)) : "Sin JIRA")
+                </span>
+                <span class="@($"ta-tag {(_seg.VaReporteVP ? "vp" : "")}")">
+                    <MudIcon Icon="@Icons.Material.Filled.Summarize" Style="font-size:14px" />
+                    Reportado al VP: @(_seg.VaReporteVP ? "Sí" : "No")
+                </span>
+                @if (!string.IsNullOrWhiteSpace(_seg.CausaRaiz))
+                {
+                    <span class="ta-tag ok"><MudIcon Icon="@Icons.Material.Filled.Troubleshoot" Style="font-size:14px" /> Causa raíz identificada</span>
+                }
+                @if (!_seg.Activo)
+                {
+                    <span class="ta-tag"><MudIcon Icon="@Icons.Material.Filled.TaskAlt" Style="font-size:14px" /> Gestión finalizada</span>
+                }
+            </div>
+            @if (_seg.VaReporteVP)
+            {
+                <MudAlert Severity="Severity.Normal" Dense="true" Class="mt-2 mb-1" Icon="@Icons.Material.Filled.Summarize"
+                          Style="background:#F5F3FF;border:1px solid #DDD6FE">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                        <span>
+                            En el reporte de <b>@TextoPeriodo(_seg.PeriodoReporteVP)</b> · estado <b>@EstadosVP.Nombre(_seg.EstadoReporteVP)</b>
+                            @if (!string.IsNullOrWhiteSpace(_seg.NotaReporteVP))
+                            {
+                                <span class="d-block ta-muted" style="font-size:.8rem">"@Formato.Corto(_seg.NotaReporteVP, 140)"</span>
+                            }
+                        </span>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.OpenInNew"
+                                   OnClick="IrAlReporteVP">Ver registro</MudButton>
+                    </div>
+                </MudAlert>
+            }
+            @if (!string.IsNullOrWhiteSpace(_seg.ProximosPasos))
+            {
+                <MudText Typo="Typo.body2" Class="mt-1"><b>Próximos pasos:</b> @_seg.ProximosPasos</MudText>
+            }
+        }
+
+        <MudDivider Class="my-3" />
+
+        @* ===== Datos del caso ===== *@
+        <div class="ta-campos">
+            <div class="c"><span>Categoría</span><b>@(Ticket.Categoria ?? "—")</b></div>
+            <div class="c"><span>Asignatario</span><b>@(Ticket.Asignatario ?? "Sin asignar")</b></div>
+            <div class="c"><span>Grupo</span><b>@(Ticket.Grupo ?? "—")</b></div>
+            <div class="c"><span>Usuario final afectado</span><b>@(Ticket.UsuarioFinalAfectado ?? "—")</b></div>
+            <div class="c"><span>Apertura</span><b>@(Ticket.FechaApertura?.ToString("dd/MM/yyyy HH:mm") ?? "—")</b></div>
+            <div class="c"><span>Cierre solicitado</span><b>@(Ticket.FechaCierreSolicitado?.ToString("dd/MM/yyyy HH:mm") ?? "—")</b></div>
+            <div class="c"><span>Vencimiento SLA</span><b>@(Ticket.FechaVencimiento?.ToString("dd/MM/yyyy HH:mm") ?? "Sin SLA")</b></div>
+        </div>
+        <div class="mt-3">
+            <MudText Typo="Typo.overline" Class="ta-tenue">Descripción</MudText>
+            <MudText Typo="Typo.body2" Style="white-space:pre-wrap">@(string.IsNullOrWhiteSpace(Ticket.Descripcion) ? "—" : Ticket.Descripcion)</MudText>
+        </div>
+
+        @if (Ticket.TieneOrdenCambio)
+        {
+            <MudPaper Class="@OcCardClass" Elevation="0" Outlined="true">
+                <div class="d-flex align-center justify-space-between mb-2">
+                    <MudText Typo="Typo.subtitle2">
+                        <MudIcon Icon="@Icons.Material.Filled.ChangeCircle" Size="Size.Small" Style="vertical-align:middle" /> Orden de cambio @Ticket.NoOC
+                    </MudText>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" EndIcon="@Icons.Material.Filled.ArrowForward" OnClick="IrAOc">Abrir</MudButton>
+                </div>
+                @if (Ticket.ReqCerradoConCambioPendiente)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">Ticket cerrado, pero la orden de cambio sigue pendiente.</MudAlert>
+                }
+                <div class="ta-campos">
+                    <div class="c"><span>Estado OC</span><b>@(Ticket.EstadoOC ?? "—")</b></div>
+                    <div class="c"><span>Asignatario OC</span><b>@(Ticket.AsignatarioOC ?? "Sin asignar")</b></div>
+                    <div class="c"><span>Apertura OC</span><b>@(Ticket.FechaAperturaOC?.ToString("dd/MM/yyyy") ?? "—")</b></div>
+                    <div class="c"><span>Cierre OC</span><b>@(Ticket.FechaCierreSolicitadoOC?.ToString("dd/MM/yyyy") ?? "Abierta")</b></div>
+                    <div class="c"><span>Complejidad</span><b>@(Ticket.ComplejidadOC ?? "Sin asignar")</b></div>
+                    <div class="c"><span>OC dentro de SLA</span><b>@(Ticket.OCResueltoDentroSLA ?? "—")</b></div>
+                </div>
+            </MudPaper>
+        }
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cerrar">Cerrar</MudButton>
-        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Assignment"
-                   OnClick="AbrirGestion">Registrar gestión</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.EditNote"
+                   OnClick="@(() => AbrirGestion(0))">Registrar gestión</MudButton>
     </DialogActions>
 </MudDialog>
-
-@inject IDialogService DialogService
 
 @code {
     [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
     [Parameter] public TicketEnriquecidoDto Ticket { get; set; } = default!;
-    private string OcCardClass => "pa-3 oc-card" + (Ticket.ReqCerradoConCambioPendiente ? " pendiente" : "");
-    private void Cerrar() => MudDialog.Close();
 
-    private async Task AbrirGestion()
+    private SeguimientoDto? _seg;
+    private bool _cargandoSeg = true;
+    private bool _copiado;
+    private bool _huboCambios;
+
+    private string OcCardClass => "pa-3 mt-4 oc-card" + (Ticket.ReqCerradoConCambioPendiente ? " pendiente" : "");
+
+    protected override async Task OnInitializedAsync() => await CargarSeguimiento();
+
+    private async Task CargarSeguimiento()
+    {
+        _cargandoSeg = true;
+        try { _seg = await Api.ObtenerSeguimientoAsync(Ticket.NoTicket); }
+        catch { _seg = null; }
+        finally { _cargandoSeg = false; }
+    }
+
+    private void Cerrar()
+    {
+        if (_huboCambios) MudDialog.Close(DialogResult.Ok(true));
+        else MudDialog.Cancel();
+    }
+
+    /// <summary>Abre la gestión del caso; tabInicial 4 = pestaña Reporte VP.</summary>
+    private async Task AbrirGestion(int tabInicial, bool incluirEnVP = false)
     {
         var p = new DialogParameters
         {
             ["RefNum"] = Ticket.NoTicket,
             ["EsOrdenCambio"] = false,
-            ["OrdenCambioRef"] = Ticket.NoOC   // si el trabajo sigue bajo la OC, queda enlazado
+            ["OrdenCambioRef"] = Ticket.NoOC,   // si el trabajo sigue bajo la OC, queda enlazado
+            ["TabInicial"] = tabInicial,
+            ["IncluirEnVP"] = incluirEnVP,
+            ["Contexto"] = Ticket
         };
-        await DialogService.ShowAsync<ReporteGestionDialog>($"Gestión · {Ticket.NoTicket}", p,
-            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var d = await DialogService.ShowAsync<ReporteGestionDialog>($"Gestión · {Ticket.NoTicket}", p,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        var r = await d.Result;
+        if (r is { Canceled: false })
+        {
+            _huboCambios = true;
+            await CargarSeguimiento();
+        }
     }
+
+    private Task AgregarAlVP() => AbrirGestion(4, incluirEnVP: true);
+
+    private async Task Copiar()
+    {
+        var ok = await Ui.CopiarAsync(Ticket.NoTicket);
+        if (!ok) { Snackbar.Add("No se pudo copiar al portapapeles.", Severity.Warning); return; }
+        _copiado = true;
+        StateHasChanged();
+        await Task.Delay(1600);
+        _copiado = false;
+    }
+
+    private async Task IrAOc()
+    {
+        if (string.IsNullOrWhiteSpace(Ticket.NoOC)) return;
+        try
+        {
+            var oc = await Api.ObtenerOrdenCambioAsync(Ticket.NoOC);
+            if (oc is null) { Snackbar.Add($"No encontramos la OC {Ticket.NoOC}.", Severity.Warning); return; }
+            await DialogService.ShowAsync<OrdenCambioDetalleDialog>($"OC {oc.NoOC}", new DialogParameters { ["Orden"] = oc },
+                new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+        }
+        catch (Exception) { Snackbar.Add($"No pudimos abrir la OC {Ticket.NoOC}.", Severity.Error); }
+    }
+
+    private async Task VerTimeline()
+        => await DialogService.ShowAsync<TimelineDialog>($"Timeline · {Ticket.NoTicket}",
+            new DialogParameters { ["RefNum"] = Ticket.NoTicket },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+
+    private void IrAlReporteVP()
+    {
+        var per = _seg?.PeriodoReporteVP is { } p ? $"{p.Year:0000}-{p.Month:00}" : $"{DateTime.Today:yyyy-MM}";
+        MudDialog.Cancel();
+        Nav.NavigateTo($"/reporte-vp?periodo={per}");
+    }
+
+    private static string TextoPeriodo(DateOnly? p)
+        => p is { } d ? $"{Formato.NombreMes(d.Month)} {d.Year}" : "período sin definir";
 }

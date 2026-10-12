@@ -68,7 +68,10 @@ app.MapAnalistaEndpoints();
 app.MapSeguimientoEndpoints();
 app.MapProveedorEndpoints();
 app.MapCasoEndpoints();
-app.MapTrabajoDiarioEndpoints();
+// Diario TI desactivado (2026-10-12): sus endpoints dejan de exponerse. El código y las
+// tablas (Tecnico, ActividadDiaria) se conservan; para reactivar, descomentar esta línea
+// y el registro del servicio en DependencyInjection.cs.
+// app.MapTrabajoDiarioEndpoints();
 app.MapReporteVPEndpoints();
 app.MapCatalogoGestionEndpoints();
 app.MapAdminEndpoints();
