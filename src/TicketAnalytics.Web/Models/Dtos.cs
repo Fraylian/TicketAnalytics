@@ -204,8 +204,12 @@ public class SeguimientoDto
     public int ReportadoProveedor { get; set; }
     public DateTime? FechaReporteProveedor { get; set; }
     public string? TicketProveedor { get; set; }
-    public int Sistema { get; set; }
+    public int Sistema { get; set; }                         // SistemaId (0 = sin sistema)
     public string SistemaTexto { get; set; } = "";
+    public int? ProveedorSistemaId { get; set; }
+    public string? ProveedorSistema { get; set; }
+    public int TipoCorreccionId { get; set; }
+    public string TipoCorreccionTexto { get; set; } = "";
     public int TipoSolucion { get; set; }
     public string TipoSolucionTexto { get; set; } = "";
     public int TipoActualizacionDatos { get; set; }

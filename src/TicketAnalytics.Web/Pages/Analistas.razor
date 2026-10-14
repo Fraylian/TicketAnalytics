@@ -139,10 +139,11 @@ else
                 <MudItem xs="6" md="3"><KpiCard Titulo="OC recibidas" Valor="@_detalle.OcRecibidas.ToString()" Icono="@Icons.Material.Filled.ChangeCircle" Acento="azul" Nota="@($"{_detalle.OcCerradas} cerradas")" /></MudItem>
                 <MudItem xs="6" md="3"><KpiCard Titulo="Actualizaciones" Valor="@_detalle.ActualizacionesRealizadas.ToString()" Icono="@Icons.Material.Filled.History" Acento="violeta" Nota="gestiones registradas en el período" /></MudItem>
                 <MudItem xs="6" md="3"><KpiCard Titulo="Pend. seguimiento" Valor="@_detalle.CasosPendientesSeguimiento.ToString()" Icono="@Icons.Material.Filled.PendingActions" Acento="riesgo" Nota="pasó su próximo seguimiento" /></MudItem>
-                <MudItem xs="6" md="3"><KpiCard Titulo="Espera proveedor" Valor="@_detalle.CasosEnEsperaProveedor.ToString()" Icono="@Icons.Material.Filled.Business" Acento="neutro" /></MudItem>
+                <MudItem xs="6" md="3"><KpiCard Titulo="Espera proveedor" Valor="@_detalle.CasosEnEsperaProveedor.ToString()" Icono="@Icons.Material.Filled.Business" Acento="neutro"
+                                                Nota="casos detenidos por el proveedor" TextoAccion="Ver cuáles son" OnClick="VerEsperaProveedor" /></MudItem>
             </MudGrid>
 
-            <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-3">
+            <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-3" @bind-ActivePanelIndex="_tabDetalle">
                 <MudTabPanel Text="Tickets del analista" Icon="@Icons.Material.Filled.ConfirmationNumber">
                     <PanelTecnico Tecnico="@_detalle.Analista" EsOrdenCambio="false" VistaInicial="abiertas"
                                   OnCerrar="@(() => Seleccionar(null))" />
@@ -150,6 +151,38 @@ else
                 <MudTabPanel Text="Órdenes de cambio" Icon="@Icons.Material.Filled.ChangeCircle">
                     <PanelTecnico Tecnico="@_detalle.Analista" EsOrdenCambio="true" VistaInicial="mes"
                                   OnCerrar="@(() => Seleccionar(null))" />
+                </MudTabPanel>
+                @* Antes la tarjeta mostraba solo el número: aquí se ve cuáles son y desde cuándo esperan. *@
+                <MudTabPanel Text="Espera de proveedor" Icon="@Icons.Material.Filled.Business"
+                             BadgeData="@(_espera.Count > 0 ? _espera.Count : null)" BadgeColor="Color.Warning">
+                    @if (_cargandoEspera)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                    }
+                    else if (!_espera.Any())
+                    {
+                        <EmptyState Icono="@Icons.Material.Filled.CheckCircle" ColorIcono="var(--op-cumplido)"
+                                    Mensaje="Este analista no tiene casos en espera de proveedor." />
+                    }
+                    else
+                    {
+                        <MudTable Items="_espera" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm" T="CasoProveedorDto">
+                            <HeaderContent>
+                                <MudTh>Caso</MudTh><MudTh>Sistema</MudTh><MudTh>Proveedor</MudTh><MudTh>Caso del proveedor</MudTh>
+                                <MudTh Style="text-align:right">En espera desde</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Caso"><b>@context.RefNum</b> <span class="ta-tenue">@(context.TipoOrigen == "chg" ? "OC" : "Ticket")</span></MudTd>
+                                <MudTd DataLabel="Sistema">@(context.Sistema ?? "Sin sistema")</MudTd>
+                                <MudTd DataLabel="Proveedor">@(context.Proveedor ?? "Por asignar")</MudTd>
+                                <MudTd DataLabel="Caso del proveedor">@(context.TicketProveedor ?? "—")</MudTd>
+                                <MudTd DataLabel="En espera desde" Style="text-align:right">
+                                    @context.Desde.ToLocalTime().ToString("dd/MM/yyyy")
+                                    <span style="@($"color:{(context.Dias > 7 ? "var(--op-vencido)" : "var(--texto-tenue)")};font-weight:600")"> · @context.Dias d</span>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
                 </MudTabPanel>
             </MudTabs>
         </div>
@@ -279,6 +312,10 @@ else
 
     private string? _analistaSel;
     private MetricaAnalistaDto? _detalle;
+    private int _tabDetalle;
+    private List<CasoProveedorDto> _espera = new();
+    private bool _cargandoEspera;
+    private string? _esperaDe;
 
     private readonly ApexChartOptions<PuntoAnalista> _opcionesBarras =
         ChartTheme.Barras<PuntoAnalista>(new() { ChartTheme.Azul, ChartTheme.Verde, ChartTheme.Ambar }, horizontal: true);
@@ -351,6 +388,8 @@ else
             _series = (await Task.WhenAll(tareas)).ToDictionary(x => x.Analista, x => x.Serie);
 
             _detalle = _analistaSel is null ? null : _metricas.FirstOrDefault(m => m.Analista == _analistaSel);
+            _esperaDe = null;
+            await CargarEspera();
             _ultimaCarga = DateTime.Now;
             _version++;
         }
@@ -369,12 +408,35 @@ else
     {
         _analistaSel = string.IsNullOrWhiteSpace(analista) || _analistaSel == analista ? null : analista;
         _detalle = _analistaSel is null ? null : _metricas.FirstOrDefault(m => m.Analista == _analistaSel);
+        _tabDetalle = 0;
         StateHasChanged();
+        await CargarEspera();
         if (_detalle is not null)
         {
             await Task.Yield();
             await Ui.IrAAsync("detalle-analista");
         }
+    }
+
+    /// <summary>Casos del analista en espera de proveedor (local, barato). Se recarga al cambiar de analista.</summary>
+    private async Task CargarEspera()
+    {
+        if (_detalle is null) { _espera = new(); _esperaDe = null; return; }
+        if (_esperaDe == _detalle.Analista) return;
+        _cargandoEspera = true;
+        try
+        {
+            _espera = await Api.EsperaProveedorAsync(_detalle.AnalistaUuid, _detalle.Analista);
+            _esperaDe = _detalle.Analista;
+        }
+        catch { _espera = new(); }
+        finally { _cargandoEspera = false; StateHasChanged(); }
+    }
+
+    private async Task VerEsperaProveedor()
+    {
+        _tabDetalle = 2;
+        await CargarEspera();
     }
 
     private List<double>? SerieDe(string analista) => _series.TryGetValue(analista, out var s) && s.Count > 1 ? s : null;

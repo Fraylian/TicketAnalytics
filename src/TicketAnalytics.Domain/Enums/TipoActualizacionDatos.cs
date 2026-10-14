@@ -1,8 +1,8 @@
 namespace TicketAnalytics.Domain.Enums;
 
 /// <summary>
-/// Subtipo que SOLO aplica cuando Sistema = BSC en Línea y TipoSolución = Actualización
-/// de datos. Estructurado porque el área quiere medir cuántos casos hay de cada tipo
+/// Subtipo que SOLO aplica cuando el sistema lo exige (BSC en Línea) y TipoSolución =
+/// Actualización de datos. Estructurado porque el área quiere medir cuántos casos hay de cada tipo
 /// (token enganchado, desagrupación de empresa, etc.).
 /// </summary>
 public enum TipoActualizacionDatos
@@ -34,7 +34,8 @@ public static class TipoActualizacionDatosInfo
                .Where(t => t != TipoActualizacionDatos.NoAplica)
                .Select(t => ((int)t, Nombre(t)));
 
-    /// <summary>El subtipo solo aplica en esta combinación (regla del punto 7).</summary>
-    public static bool Aplica(SistemaAfectado sistema, TipoSolucion solucion)
-        => sistema == SistemaAfectado.BscEnLinea && solucion == TipoSolucion.ActualizacionDatos;
+    /// <summary>El subtipo solo aplica cuando el sistema lo exige (hoy BSC en Línea, marcado
+    /// en el catálogo con AplicaSubtipoActualizacion) y la solución es Actualización de datos.</summary>
+    public static bool Aplica(bool sistemaAplicaSubtipo, TipoSolucion solucion)
+        => sistemaAplicaSubtipo && solucion == TipoSolucion.ActualizacionDatos;
 }

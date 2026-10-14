@@ -37,5 +37,11 @@ public class ActividadDiariaConfig : IEntityTypeConfiguration<ActividadDiaria>
         e.HasIndex(x => x.Fecha);
         e.HasIndex(x => x.TecnicoId);
         e.HasIndex(x => x.RefNumVinculado);
+
+        // Clasificación en conjunto con la gestión (sistema → proveedor → tipo de solución).
+        e.Property(x => x.TipoSolucion).HasConversion<int>();
+        e.HasIndex(x => x.SistemaId);
+        e.HasOne(x => x.Sistema).WithMany().HasForeignKey(x => x.SistemaId).OnDelete(DeleteBehavior.Restrict);
+        e.HasOne(x => x.Proveedor).WithMany().HasForeignKey(x => x.ProveedorId).OnDelete(DeleteBehavior.Restrict);
     }
 }

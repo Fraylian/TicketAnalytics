@@ -9,6 +9,10 @@ public static class AnalistaEndpoints
     {
         var g = app.MapGroup("/api/analistas").WithTags("Analistas");
 
+        g.MapGet("/espera-proveedor", async (string? uuid, string? nombre, IIndicadoresGestionService s, CancellationToken ct) =>
+            Results.Ok(await s.EnEsperaProveedorAsync(uuid, nombre, ct)))
+         .WithSummary("Casos del analista en etapa 'En espera de proveedor': ticket, sistema, proveedor y desde cuándo.");
+
         g.MapPost("/metricas", async (TicketFiltro f, IAnalistaService s, CancellationToken ct) => Results.Ok(await s.MetricasAsync(f, ct)))
          .WithSummary("Métricas de productividad por analista (dinámicas según rango).");
 

@@ -172,6 +172,19 @@ public class TicketAnalyticsApi
         => await Post<ControlVencimientosDto>("api/ordenes-cambio/control-vencimientos", f) ?? new();
     public async Task<List<string>> OcAnalistasAsync(OrdenCambioFiltro f)
         => await Post<List<string>>("api/ordenes-cambio/analistas", f) ?? new();
+    public async Task<AtencionPorPersonaDto> AtencionPorPersonaAsync(int anio, int mes, CancellationToken ct = default)
+        => await Get<AtencionPorPersonaDto>($"api/ordenes-cambio/atencion-por-persona?anio={anio}&mes={mes}", ct) ?? new();
+    /// <summary>Asigna la complejidad de una OC (base local). complejidad: Alta | Media | Baja.</summary>
+    public async Task AsignarComplejidadOcAsync(string chgRefNum, string complejidad, string? usuario, CancellationToken ct = default)
+    {
+        var resp = await _http.PutAsJsonAsync($"api/ordenes-cambio/{Uri.EscapeDataString(chgRefNum)}/complejidad",
+            new { Complejidad = complejidad, Usuario = usuario }, ct);
+        await GarantizarExitoAsync(resp, ct);
+    }
+
+    // ===== Parámetros de negocio (fecha base, umbrales) =====
+    public async Task<ParametrosNegocioDto> ParametrosAsync(CancellationToken ct = default)
+        => await Get<ParametrosNegocioDto>("api/parametros", ct) ?? new();
 
     // ===== Finalizar / reabrir gestión =====
     public async Task FinalizarGestionAsync(long seguimientoId, string motivo, string? usuario, CancellationToken ct = default)
@@ -200,6 +213,60 @@ public class TicketAnalyticsApi
         if (hasta.HasValue) q.Add($"hasta={hasta.Value:yyyy-MM-dd}");
         var url = "api/dashboard/indicadores-gestion" + (q.Count > 0 ? "?" + string.Join("&", q) : "");
         return await Get<IndicadoresGestionDto>(url, ct) ?? new();
+    }
+
+    // ===== Dashboard: carga mensual, pendientes de proveedor y Excel de sistemas =====
+    public async Task<List<FlujoMensualDto>> FlujoMensualAsync(TicketFiltro f, CancellationToken ct = default)
+        => await Post<List<FlujoMensualDto>>("api/dashboard/flujo-mensual", f, ct) ?? new();
+
+    public async Task<PagedResult<CasoProveedorDto>> ProveedorPendientesAsync(DateTime? desde, DateTime? hasta, int page, int pageSize, CancellationToken ct = default)
+    {
+        var q = new List<string> { $"page={page}", $"pageSize={pageSize}" };
+        if (desde.HasValue) q.Add($"desde={desde.Value:yyyy-MM-dd}");
+        if (hasta.HasValue) q.Add($"hasta={hasta.Value:yyyy-MM-dd}");
+        return await Get<PagedResult<CasoProveedorDto>>("api/dashboard/proveedor-pendientes?" + string.Join("&", q), ct) ?? new();
+    }
+
+    public async Task<byte[]> SistemasExcelBytesAsync(DateTime? desde, DateTime? hasta, int? sistemaId = null, CancellationToken ct = default)
+    {
+        var q = new List<string>();
+        if (desde.HasValue) q.Add($"desde={desde.Value:yyyy-MM-dd}");
+        if (hasta.HasValue) q.Add($"hasta={hasta.Value:yyyy-MM-dd}");
+        if (sistemaId is > 0) q.Add($"sistemaId={sistemaId}");
+        var resp = await _http.GetAsync("api/dashboard/sistemas/excel" + (q.Count > 0 ? "?" + string.Join("&", q) : ""), ct);
+        await GarantizarExitoAsync(resp, ct);
+        return await resp.Content.ReadAsByteArrayAsync(ct);
+    }
+
+    /// <summary>Casos del analista en espera de proveedor (cuáles son, no solo cuántos).</summary>
+    public async Task<List<CasoProveedorDto>> EsperaProveedorAsync(string? uuid, string? nombre, CancellationToken ct = default)
+    {
+        var q = new List<string>();
+        if (!string.IsNullOrWhiteSpace(uuid)) q.Add($"uuid={Uri.EscapeDataString(uuid)}");
+        if (!string.IsNullOrWhiteSpace(nombre)) q.Add($"nombre={Uri.EscapeDataString(nombre)}");
+        return await Get<List<CasoProveedorDto>>("api/analistas/espera-proveedor?" + string.Join("&", q), ct) ?? new();
+    }
+
+    // ===== Catálogo de sistemas y tipos de corrección (administración) =====
+    public async Task<List<SistemaDto>> SistemasAsync(CancellationToken ct = default)
+        => await Get<List<SistemaDto>>("api/sistemas", ct) ?? new();
+    public async Task<SistemaDto?> GuardarSistemaAsync(GuardarSistemaRequest req, CancellationToken ct = default)
+        => await Post<SistemaDto>("api/sistemas/guardar", req, ct);
+    public async Task<ResultadoEliminacionDto> EliminarSistemaAsync(int sistemaId, CancellationToken ct = default)
+    {
+        var resp = await _http.DeleteAsync($"api/sistemas/{sistemaId}", ct);
+        await GarantizarExitoAsync(resp, ct);
+        return await resp.Content.ReadFromJsonAsync<ResultadoEliminacionDto>(cancellationToken: ct) ?? new();
+    }
+    public async Task<List<TipoCorreccionDto>> TiposCorreccionAsync(CancellationToken ct = default)
+        => await Get<List<TipoCorreccionDto>>("api/tipos-correccion", ct) ?? new();
+    public async Task<TipoCorreccionDto?> GuardarTipoCorreccionAsync(GuardarTipoCorreccionRequest req, CancellationToken ct = default)
+        => await Post<TipoCorreccionDto>("api/tipos-correccion/guardar", req, ct);
+    public async Task<ResultadoEliminacionDto> EliminarTipoCorreccionAsync(int id, CancellationToken ct = default)
+    {
+        var resp = await _http.DeleteAsync($"api/tipos-correccion/{id}", ct);
+        await GarantizarExitoAsync(resp, ct);
+        return await resp.Content.ReadFromJsonAsync<ResultadoEliminacionDto>(cancellationToken: ct) ?? new();
     }
 
     // ===== Casos pendientes de escalar a proveedor =====

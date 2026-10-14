@@ -1,4 +1,5 @@
-@* Aviso emergente: tickets del grupo que vencen en la próxima hora, con cuenta regresiva. *@
+@* Aviso emergente: tickets del grupo que vencen dentro de la ventana de aviso, con cuenta regresiva
+   y nivel (aviso temprano · urgente · crítico). *@
 @inject NavigationManager Nav
 @inject UiService Ui
 @implements IDisposable
@@ -9,9 +10,12 @@
             <span class="ta-alerta-icono"><MudIcon Icon="@Icons.Material.Filled.AlarmOn" /></span>
             <div>
                 <MudText Typo="Typo.h6" Style="font-weight:700;line-height:1.2">
-                    @(Tickets.Count == 1 ? "1 ticket está a punto de vencer" : $"{Tickets.Count} tickets están a punto de vencer")
+                    @(Tickets.Count == 1 ? "1 ticket vence pronto" : $"{Tickets.Count} tickets vencen pronto")
                 </MudText>
-                <MudText Typo="Typo.caption" Class="ta-muted">Su SLA vence en menos de @ReglaAlertas.MinutosAntelacion minutos</MudText>
+                <MudText Typo="Typo.caption" Class="ta-muted">
+                    SLA a vencer en las próximas @Formato.Duracion(ReglaAlertas.MinutosAvisoTemprano)
+                    @if (Urgentes > 0) { <b style="color:var(--op-vencido)"> · @Urgentes @(Urgentes == 1 ? "urgente" : "urgentes") (menos de @Formato.Duracion(ReglaAlertas.MinutosAntelacion))</b> }
+                </MudText>
             </div>
         </div>
     </TitleContent>
@@ -21,13 +25,14 @@
             {
                 <div class="@($"ta-alerta-item {t.Nivel}")">
                     <div class="reloj">
-                        <b>@(Math.Max(0, (int)Math.Ceiling(t.MinutosRestantes)))</b>
-                        <span>min</span>
+                        <b>@t.Reloj.Valor</b>
+                        <span>@t.Reloj.Unidad</span>
                     </div>
                     <div class="cuerpo">
                         <div class="d-flex align-center gap-2 flex-wrap">
                             <span class="ref">@t.NoTicket</span>
-                            <span class="ta-tag err">@t.TextoRestante</span>
+                            <span class="@($"ta-tag {(t.Nivel == "medio" ? "warn" : "err")}")">@t.TextoRestante</span>
+                            @if (t.Nivel == "medio") { <span class="ta-tag">aviso temprano</span> }
                         </div>
                         <div class="titulo">@Formato.Corto(t.Titulo, 110)</div>
                         <div class="meta">
@@ -66,6 +71,8 @@
 @code {
     [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
     [Parameter] public List<AlertaTicket> Tickets { get; set; } = new();
+
+    private int Urgentes => Tickets.Count(t => t.Nivel != "medio");
 
     private string _permiso = "granted";
     private Timer? _reloj;

@@ -38,10 +38,11 @@ public static class EpochRD
 
     /// <summary>Convierte un rango [desde, hasta] de la UI al par epoch que deben usar
     /// las consultas: (desdeEpoch inclusivo, hastaEpochExclusivo). Si no hay 'hasta',
-    /// devuelve null en el segundo elemento (sin tope).</summary>
-    public static (int Desde, int? HastaExclusivo) Rango(DateTime? desde, DateTime? hasta, DateTime? porDefectoDesde = null)
+    /// devuelve null en el segundo elemento (sin tope). Sin 'desde' se usa porDefectoDesde
+    /// (la fecha base configurada en ParametroSistema: General.FechaBase).</summary>
+    public static (int Desde, int? HastaExclusivo) Rango(DateTime? desde, DateTime? hasta, DateTime porDefectoDesde)
     {
-        var d = desde ?? porDefectoDesde ?? new DateTime(2026, 1, 1);
+        var d = desde ?? porDefectoDesde;
         return (InicioDelDia(d), hasta.HasValue ? FinDelDiaExclusivo(hasta.Value) : (int?)null);
     }
 }

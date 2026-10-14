@@ -5,129 +5,136 @@ using TicketAnalytics.Application.Tickets.DTOs;
 using TicketAnalytics.Domain.Common;
 using TicketAnalytics.Infrastructure.Persistence.Analytics;
 using TicketAnalytics.Infrastructure.Persistence.Sdm;
+using TicketAnalytics.Infrastructure.Services.Parametros;
 
 namespace TicketAnalytics.Infrastructure.Repositories;
 
-/// <summary>Metricas de productividad por analista, calculadas dinamicamente
-/// segun el rango de fechas. Combina tickets/OC de mdb con seguimiento local.</summary>
+/// <summary>
+/// Métricas de productividad por analista del grupo, según el rango de fechas.
+///
+/// Antes: se traían a memoria TODAS las filas de recibidos, cerrados y OC del rango (de cualquier
+/// asignatario) y se agrupaba en C# comparando binarios con SequenceEqual.
+/// Ahora: cada bloque es un GROUP BY (analista, día) en SQL, restringido a los UUID del grupo
+/// (call_req_x4 / chg_x4). A memoria llegan, como mucho, analistas × días con actividad.
+/// </summary>
 public class AnalistaService : IAnalistaService
 {
     private readonly SdmReadContext _sdm;
     private readonly AnalyticsContext _analytics;
-    public AnalistaService(SdmReadContext sdm, AnalyticsContext analytics) { _sdm = sdm; _analytics = analytics; }
+    private readonly IParametrosProvider _parametros;
+    private readonly CatalogoSdm _catalogo;
+
+    public AnalistaService(SdmReadContext sdm, AnalyticsContext analytics, IParametrosProvider parametros, CatalogoSdm catalogo)
+    {
+        _sdm = sdm;
+        _analytics = analytics;
+        _parametros = parametros;
+        _catalogo = catalogo;
+    }
+
+    /// <summary>Medianoche de referencia para numerar días en SQL sin funciones sobre la columna en el WHERE.</summary>
+    private static readonly DateTime Dia0 = new(2000, 1, 1);
+    private static readonly double OffsetDia0 = (Dia0 - EpochRD.BaseTicket).TotalSeconds;
 
     public async Task<IReadOnlyList<MetricaAnalistaDto>> MetricasAsync(TicketFiltro f, CancellationToken ct = default)
     {
-        var alcance = await _analytics.CategoriasAlcance.AsNoTracking().Where(c => c.Activo).Select(c => c.Persid).ToListAsync(ct);
-        if (f.Categorias is { Count: > 0 }) alcance = alcance.Where(p => f.Categorias.Contains(p)).ToList();
-        int desde = f.FechaDesde.HasValue ? EpochRD.InicioDelDia(f.FechaDesde.Value) : EpochRD.ToEpoch(new DateTime(2026, 1, 1));
+        var p = await _parametros.ObtenerAsync(ct);
+        var alcance = (await _catalogo.AlcanceAsync(ct)).Select(a => a.Persid).ToList();
+        if (f.Categorias is { Count: > 0 }) alcance = alcance.Where(x => f.Categorias.Contains(x)).ToList();
+        int desde = f.FechaDesde.HasValue ? EpochRD.InicioDelDia(f.FechaDesde.Value) : EpochRD.InicioDelDia(p.FechaBase);
         int hasta = f.FechaHasta.HasValue ? EpochRD.FinDelDiaExclusivo(f.FechaHasta.Value) : EpochRD.ToEpoch(DateTime.Now);
 
-        // --- Tickets recibidos (por open_date) ---
-        var recibidos = await _sdm.CallReqs.AsNoTracking()
-            .Where(cr => alcance.Contains(cr.category!) && cr.open_date >= desde && cr.open_date < hasta && cr.assignee != null)
-            .Select(cr => new { cr.assignee, cr.open_date, cr.active_flag, cr.close_date })
+        var grupo = await _catalogo.GrupoAsync(ct);
+        if (grupo.Count == 0) return new List<MetricaAnalistaDto>();
+        var uuids = grupo.Select(g => g.Uuid).ToList();
+        var codigosOc = (await _catalogo.CategoriasOcAreaAsync(ct)).Keys.ToList();
+
+        // --- Tickets recibidos: GROUP BY (assignee, día de apertura) ---
+        var recibidos = await ConsultasSdm.FiltrarPorUuid(
+                _sdm.CallReqs.AsNoTracking().Where(cr => alcance.Contains(cr.category!) && cr.open_date >= desde && cr.open_date < hasta),
+                cr => cr.assignee, uuids)
+            .GroupBy(cr => new { cr.assignee, Dia = Math.Floor((cr.open_date!.Value - OffsetDia0) / 86400.0) })
+            .Select(g => new { g.Key.assignee, g.Key.Dia, N = g.Count(), Activos = g.Count(x => x.active_flag == 1) })
             .ToListAsync(ct);
 
-        // --- Tickets cerrados (por close_date) ---
-        var cerrados = await _sdm.CallReqs.AsNoTracking()
-            .Where(cr => alcance.Contains(cr.category!) && cr.close_date >= desde && cr.close_date < hasta && cr.close_date > 0 && cr.assignee != null)
-            .Select(cr => new { cr.assignee, cr.open_date, cr.close_date })
+        // --- Tickets cerrados: GROUP BY (assignee, día de cierre), con la suma de segundos de resolución ---
+        var cerrados = await ConsultasSdm.FiltrarPorUuid(
+                _sdm.CallReqs.AsNoTracking().Where(cr => alcance.Contains(cr.category!) && cr.close_date >= desde && cr.close_date < hasta && cr.close_date > 0),
+                cr => cr.assignee, uuids)
+            .GroupBy(cr => new { cr.assignee, Dia = Math.Floor((cr.close_date!.Value - OffsetDia0) / 86400.0) })
+            .Select(g => new
+            {
+                g.Key.assignee, g.Key.Dia, N = g.Count(),
+                ConApertura = g.Count(x => x.open_date != null && x.open_date != 0),
+                Segundos = g.Sum(x => x.open_date != null && x.open_date != 0 ? (long)x.close_date!.Value - x.open_date.Value : 0L)
+            })
             .ToListAsync(ct);
 
-        // --- OC del área: filtrar por las categorías de Orden de Cambio (chgcat) ---
-        var codigosOc = await _sdm.ChgCats.AsNoTracking()
-            .Where(cc => cc.sym != null && cc.sym.Contains("Orden de Cambio"))
-            .Select(cc => cc.code).ToListAsync(ct);
+        // --- OC recibidas / cerradas: GROUP BY (assignee, día) sobre las categorías de OC del área ---
+        var ocRecibidas = await ConsultasSdm.FiltrarPorUuid(
+                _sdm.Changes.AsNoTracking().Where(c => c.category != null && codigosOc.Contains(c.category) && c.open_date >= desde && c.open_date < hasta),
+                c => c.assignee, uuids)
+            .GroupBy(c => new { c.assignee, Dia = Math.Floor((c.open_date!.Value - OffsetDia0) / 86400.0) })
+            .Select(g => new { g.Key.assignee, g.Key.Dia, N = g.Count() })
+            .ToListAsync(ct);
+        var ocCerradas = await ConsultasSdm.FiltrarPorUuid(
+                _sdm.Changes.AsNoTracking().Where(c => c.category != null && codigosOc.Contains(c.category) && c.close_date >= desde && c.close_date < hasta && c.close_date > 0),
+                c => c.assignee, uuids)
+            .GroupBy(c => new { c.assignee, Dia = Math.Floor((c.close_date!.Value - OffsetDia0) / 86400.0) })
+            .Select(g => new { g.Key.assignee, g.Key.Dia, N = g.Count() })
+            .ToListAsync(ct);
 
-        var ocRecibidas = await _sdm.Changes.AsNoTracking()
-            .Where(c => c.category != null && codigosOc.Contains(c.category)
-                        && c.open_date >= desde && c.open_date < hasta && c.assignee != null)
-            .Select(c => new { c.assignee, c.open_date }).ToListAsync(ct);
-        var ocCerradas = await _sdm.Changes.AsNoTracking()
-            .Where(c => c.category != null && codigosOc.Contains(c.category)
-                        && c.close_date >= desde && c.close_date < hasta && c.close_date > 0 && c.assignee != null)
-            .Select(c => new { c.assignee, c.close_date }).ToListAsync(ct);
-
-        // Universo de analistas (por bytes)
-        var uuidsTodos = recibidos.Select(r => r.assignee!).Concat(cerrados.Select(c => c.assignee!))
-            .Concat(ocRecibidas.Select(o => o.assignee!)).Concat(ocCerradas.Select(o => o.assignee!))
-            .Select(b => Convert.ToHexString(b)).Distinct().ToList();
-
-        // LIMITAR al grupo del área: solo los 6 analistas (por su userid en ca_contact).
-        var userIdsGrupo = TicketAnalytics.Domain.Common.GrupoAnalistas.UserIds;
-        var uuidsGrupo = await _sdm.CaContacts.AsNoTracking()
-            .Where(c => c.userid != null && userIdsGrupo.Contains(c.userid))
-            .Select(c => c.contact_uuid).ToListAsync(ct);
-        var hexGrupo = uuidsGrupo.Select(b => Convert.ToHexString(b)).ToHashSet();
-
-        // Si logramos resolver el grupo, filtramos a ellos; si no (userid vacío), dejamos todos.
-        var uuids = hexGrupo.Count > 0 ? uuidsTodos.Where(h => hexGrupo.Contains(h)).ToList() : uuidsTodos;
-
-        // Nombres
-        var todosBytes = uuids.Select(h => Convert.FromHexString(h)).ToList();
-        var contactos = await _sdm.CaContacts.AsNoTracking().Where(c => todosBytes.Contains(c.contact_uuid)).ToListAsync(ct);
-        string Nombre(string hex)
-        {
-            var b = Convert.FromHexString(hex);
-            var c = contactos.FirstOrDefault(x => x.contact_uuid.SequenceEqual(b));
-            return c != null ? $"{c.first_name} {c.last_name}".Trim() : "(desconocido)";
-        }
-
-        // Seguimiento local por tecnico
+        // Seguimiento local por técnico (base local). TecnicoUuid no lo llena ningún flujo actual;
+        // la gestión guarda el nombre en TecnicoResponsable: se usa el UUID si existe y si no, el nombre.
         var seguimientos = await _analytics.TicketSeguimientos.AsNoTracking()
             .Select(s => new { s.TecnicoUuid, s.TecnicoResponsable, s.EtapaActual, s.ProximoSeguimiento }).ToListAsync(ct);
         var actualizaciones = await _analytics.SeguimientoActualizaciones.AsNoTracking()
             .Where(a => a.CreadoEn >= (f.FechaDesde ?? DateTime.MinValue))
-            .Select(a => a.Autor).ToListAsync(ct);
+            .GroupBy(a => a.Autor).Select(g => new { Autor = g.Key, N = g.Count() }).ToListAsync(ct);
 
-        DateOnly Dia(int? epoch) => DateOnly.FromDateTime(EpochRD.ToDateTime(epoch) ?? DateTime.MinValue);
+        bool Es(byte[]? a, byte[] b) => a != null && a.SequenceEqual(b);
 
         var result = new List<MetricaAnalistaDto>();
-        foreach (var hex in uuids)
+        foreach (var m in grupo)
         {
-            var bytes = Convert.FromHexString(hex);
-            var rec = recibidos.Where(r => r.assignee!.SequenceEqual(bytes)).ToList();
-            var cer = cerrados.Where(c => c.assignee!.SequenceEqual(bytes)).ToList();
-            var ocRec = ocRecibidas.Where(o => o.assignee!.SequenceEqual(bytes)).ToList();
-            var ocCer = ocCerradas.Where(o => o.assignee!.SequenceEqual(bytes)).ToList();
+            var rec = recibidos.Where(x => Es(x.assignee, m.Uuid)).ToList();
+            var cer = cerrados.Where(x => Es(x.assignee, m.Uuid)).ToList();
+            var ocRec = ocRecibidas.Where(x => Es(x.assignee, m.Uuid)).ToList();
+            var ocCer = ocCerradas.Where(x => Es(x.assignee, m.Uuid)).ToList();
+            // Como antes: solo aparecen analistas con algún movimiento en el período.
+            if (rec.Count == 0 && cer.Count == 0 && ocRec.Count == 0 && ocCer.Count == 0) continue;
 
-            var diasApertura = rec.Select(r => Dia(r.open_date)).Distinct().Count();
-            var diasCierre = cer.Select(c => Dia(c.close_date)).Distinct().Count();
-            var horasResol = cer.Where(c => c.close_date > 0)
-                .Select(c => (EpochRD.ToDateTime(c.close_date)!.Value - EpochRD.ToDateTime(c.open_date)!.Value).TotalHours).ToList();
+            int totRec = rec.Sum(x => x.N), totCer = cer.Sum(x => x.N), totOcRec = ocRec.Sum(x => x.N), totOcCer = ocCer.Sum(x => x.N);
+            int diasRec = rec.Count, diasCer = cer.Count, diasOcRec = ocRec.Count, diasOcCer = ocCer.Count;
+            var conApertura = cer.Sum(x => x.ConApertura);
+            var segundos = cer.Sum(x => x.Segundos);
 
-            // TecnicoUuid no lo llena ningún flujo actual; la gestión guarda el nombre en TecnicoResponsable.
-            // Se usa el UUID si existe y, si no, el nombre del analista (antes estas métricas siempre daban 0).
-            var nombreAnalista = Nombre(hex);
-            var segsTecnico = seguimientos.Where(s =>
-                (s.TecnicoUuid != null && s.TecnicoUuid.SequenceEqual(bytes))
-                || (s.TecnicoUuid == null && string.Equals(s.TecnicoResponsable, nombreAnalista, StringComparison.OrdinalIgnoreCase))).ToList();
+            var segs = seguimientos.Where(s => Es(s.TecnicoUuid, m.Uuid)
+                                              || (s.TecnicoUuid == null && string.Equals(s.TecnicoResponsable, m.Nombre, StringComparison.OrdinalIgnoreCase))).ToList();
 
             result.Add(new MetricaAnalistaDto
             {
-                Analista = Nombre(hex),
-                AnalistaUuid = "0x" + hex,
-                TotalRecibidos = rec.Count,
-                TotalCerrados = cer.Count,
-                TotalActivos = rec.Count(r => r.active_flag == 1),
-                DiasConApertura = diasApertura,
-                DiasConCierre = diasCierre,
-                PromedioRecibidosDia = diasApertura > 0 ? Math.Round((decimal)rec.Count / diasApertura, 2) : 0,
-                PromedioCerradosDia = diasCierre > 0 ? Math.Round((decimal)cer.Count / diasCierre, 2) : 0,
-                PromedioHorasResolucion = horasResol.Count > 0 ? Math.Round(horasResol.Average(), 1) : 0,
-                OcRecibidas = ocRec.Count,
-                OcCerradas = ocCer.Count,
-                OcDiasApertura = ocRec.Select(o => Dia(o.open_date)).Distinct().Count(),
-                OcDiasCierre = ocCer.Select(o => Dia(o.close_date)).Distinct().Count(),
-                OcPromedioRecibidasDia = ocRec.Select(o => Dia(o.open_date)).Distinct().Count() is var d1 && d1 > 0 ? Math.Round((decimal)ocRec.Count / d1, 2) : 0,
-                OcPromedioCerradasDia = ocCer.Select(o => Dia(o.close_date)).Distinct().Count() is var d2 && d2 > 0 ? Math.Round((decimal)ocCer.Count / d2, 2) : 0,
-                CasosPendientesSeguimiento = segsTecnico.Count(s => s.ProximoSeguimiento != null && s.ProximoSeguimiento <= DateTime.Now),
-                CasosEnEsperaProveedor = segsTecnico.Count(s => (int)s.EtapaActual == 3), // EnEsperaProveedor
-                ActualizacionesRealizadas = actualizaciones.Count(a => a == Nombre(hex))
+                Analista = m.Nombre,
+                AnalistaUuid = m.UuidHex,
+                TotalRecibidos = totRec,
+                TotalCerrados = totCer,
+                TotalActivos = rec.Sum(x => x.Activos),
+                DiasConApertura = diasRec,
+                DiasConCierre = diasCer,
+                PromedioRecibidosDia = diasRec > 0 ? Math.Round((decimal)totRec / diasRec, 2) : 0,
+                PromedioCerradosDia = diasCer > 0 ? Math.Round((decimal)totCer / diasCer, 2) : 0,
+                PromedioHorasResolucion = conApertura > 0 ? Math.Round(segundos / 3600.0 / conApertura, 1) : 0,
+                OcRecibidas = totOcRec,
+                OcCerradas = totOcCer,
+                OcDiasApertura = diasOcRec,
+                OcDiasCierre = diasOcCer,
+                OcPromedioRecibidasDia = diasOcRec > 0 ? Math.Round((decimal)totOcRec / diasOcRec, 2) : 0,
+                OcPromedioCerradasDia = diasOcCer > 0 ? Math.Round((decimal)totOcCer / diasOcCer, 2) : 0,
+                CasosPendientesSeguimiento = segs.Count(s => s.ProximoSeguimiento != null && s.ProximoSeguimiento <= DateTime.Now),
+                CasosEnEsperaProveedor = segs.Count(s => (int)s.EtapaActual == 3), // EnEsperaProveedor
+                ActualizacionesRealizadas = actualizaciones.Where(a => a.Autor == m.Nombre).Sum(a => a.N)
             });
         }
-
         return result.OrderByDescending(x => x.TotalRecibidos).ToList();
     }
 

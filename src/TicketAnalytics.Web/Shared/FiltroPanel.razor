@@ -2,6 +2,7 @@
    Solo muestra filtros que el backend realmente aplica, evita el ruido de
    opciones que no vienen al caso y refleja lo activo con chips. *@
 @inject TicketAnalyticsApi Api
+@inject CatalogoCache Cache
 @implements IDisposable
 
 <div class="ta-filtros">
@@ -19,7 +20,8 @@
         @* --- Fechas: siempre presentes --- *@
         <MudItem xs="12" sm="6" md="3">
             <MudDatePicker Label="Desde" Date="Filtro.FechaDesde" DateChanged="OnDesdeChanged"
-                           DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" />
+                           DateFormat="dd/MM/yyyy" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                           HelperText="@(Filtro.FechaDesde is null && _fechaBase is not null ? $"Vacío: desde la fecha base {_fechaBase:dd/MM/yyyy}" : null)" />
         </MudItem>
         <MudItem xs="12" sm="6" md="3">
             <MudDatePicker Label="Hasta" Date="Filtro.FechaHasta" DateChanged="OnHastaChanged"
@@ -224,9 +226,13 @@
         new("anio",      "Este año")
     };
 
+    /// <summary>Fecha base configurada (General.FechaBase): la que aplica el servidor si "Desde" va vacío.</summary>
+    private DateTime? _fechaBase;
+
     protected override async Task OnInitializedAsync()
     {
         try { _analistas = await Api.GrupoAnalistasAsync(); } catch { }
+        _fechaBase = (await Cache.ParametrosAsync(Api)).FechaBase;
         if (Contexto is "tickets" or "dashboard")
         {
             try { _catalogos = await Api.CatalogosGestionAsync(); } catch { }

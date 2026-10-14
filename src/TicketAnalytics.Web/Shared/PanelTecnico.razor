@@ -1,6 +1,7 @@
 @* Panel de trabajo de un técnico: sus casos listados con las mismas columnas
    que la cola de CA Service Desk, con sub-filtros rápidos por vencimiento. *@
 @inject TicketAnalyticsApi Api
+@inject CatalogoCache Cache
 @inject FileDownloadService Descargas
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -54,10 +55,6 @@
     }
     else if (EsOrdenCambio)
     {
-        @if (_total > _ocs.Count)
-        {
-            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">Se muestran las primeras @_ocs.Count de @_total órdenes. El Excel incluye todas.</MudAlert>
-        }
         <MudTable Items="_ocs" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky ta-tabla-click" T="OrdenCambioConTicketsDto"
                   OnRowClick="@((TableRowClickEventArgs<OrdenCambioConTicketsDto> a) => VerOc(a.Item!))"
                   Breakpoint="Breakpoint.Md" FixedHeader="true" Height="55vh">
@@ -90,13 +87,10 @@
                 <MudTd DataLabel="Tickets">@context.CantidadTickets</MudTd>
             </RowTemplate>
         </MudTable>
+        @Paginador
     }
     else
     {
-        @if (_vista != "pronto" && _total > _tickets.Count)
-        {
-            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">Se muestran los primeros @_tickets.Count de @_total tickets. El Excel incluye todos.</MudAlert>
-        }
         <MudTable Items="_tickets" Dense="true" Hover="true" Elevation="0" Class="ta-tabla-sticky ta-tabla-click" T="TicketEnriquecidoDto"
                   OnRowClick="@((TableRowClickEventArgs<TicketEnriquecidoDto> a) => VerTicket(a.Item!))"
                   Breakpoint="Breakpoint.Md" FixedHeader="true" Height="55vh">
@@ -131,6 +125,7 @@
                 </MudTd>
             </RowTemplate>
         </MudTable>
+        @Paginador
     }
 </MudPaper>
 
@@ -144,6 +139,21 @@
     [Parameter] public int? Mes { get; set; }
     [Parameter] public int? Anio { get; set; }
     [Parameter] public EventCallback OnCerrar { get; set; }
+
+    /// <summary>Filas por página: la página se pide al servidor (antes se traían hasta 500 de golpe).</summary>
+    private const int TamPagina = 25;
+    private int _pagina = 1;
+    private int Paginas => Math.Max(1, (int)Math.Ceiling(_total / (double)TamPagina));
+
+    private RenderFragment Paginador => @<text>
+        @if (_total > TamPagina)
+        {
+            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mt-2">
+                <MudText Typo="Typo.caption" Class="ta-muted">@($"{(_pagina - 1) * TamPagina + 1}–{Math.Min(_pagina * TamPagina, _total)} de {_total}") · el Excel incluye todas las filas</MudText>
+                <MudPagination Count="Paginas" Selected="_pagina" SelectedChanged="IrAPagina" Size="Size.Small" Color="Color.Primary" BoundaryCount="1" MiddleCount="3" />
+            </div>
+        }
+    </text>;
 
     private List<OrdenCambioConTicketsDto> _ocs = new();
     private List<TicketEnriquecidoDto> _tickets = new();
@@ -161,7 +171,7 @@
         new("abiertas", "Abiertas",        "#1976D2"),
         new("vencidas", "Vencidas",        "#C62828"),
         new("mes",      "Vencen este mes", "#ED6C02"),
-        new("pronto",   "Vencen en 7 días","#6B4EFF")
+        new("pronto",   "Por vencer",      "#6B4EFF")
     };
 
     protected override async Task OnParametersSetAsync()
@@ -170,12 +180,20 @@
         if (_tecnicoCargado == Tecnico) return;
         _tecnicoCargado = Tecnico;
         _vista = VistaInicial;
+        _pagina = 1;
         await Cargar();
     }
 
     private async Task CambiarVista(string clave)
     {
         _vista = clave;
+        _pagina = 1;
+        await Cargar();
+    }
+
+    private async Task IrAPagina(int pagina)
+    {
+        _pagina = pagina;
         await Cargar();
     }
 
@@ -199,10 +217,12 @@
         var f = new OrdenCambioFiltro
         {
             AsignatarioNombre = Tecnico,
-            PageSize = 500,
+            Page = _pagina,
+            PageSize = TamPagina,
             OrderBy = "vencimiento"
         };
-        AplicarVistaOc(f);
+        // "Por vencer" usa OC.DiasVencePronto (parámetro), igual que el semáforo del backend.
+        AplicarVistaOc(f, (await Cache.ParametrosAsync(Api)).OcDiasVencePronto);
         _ultimoFiltroOc = f;
 
         var r = await Api.BuscarOcAvanzadoAsync(f);
@@ -210,7 +230,7 @@
         _total = r.TotalCount;
     }
 
-    private void AplicarVistaOc(OrdenCambioFiltro f)
+    private void AplicarVistaOc(OrdenCambioFiltro f, int diasVencePronto)
     {
         switch (_vista)
         {
@@ -220,7 +240,7 @@
                 f.MesVencimiento = Mes ?? DateTime.Today.Month;
                 f.AnioVencimiento = Anio ?? DateTime.Today.Year;
                 break;
-            case "pronto": f.VencenEnDias = 7; break;
+            case "pronto": f.VencenEnDias = diasVencePronto; break;
         }
     }
 
@@ -229,7 +249,8 @@
         var f = new TicketFiltro
         {
             AsignatarioNombre = Tecnico,
-            PageSize = 500,
+            Page = _pagina,
+            PageSize = TamPagina,
             OrderBy = "fechaapertura",
             OrderDesc = true
         };
@@ -243,19 +264,14 @@
                 f.FechaDesde = new DateTime(a, m, 1);
                 f.FechaHasta = new DateTime(a, m, 1).AddMonths(1).AddDays(-1);
                 break;
-            case "pronto": f.SoloAbiertos = true; break;
+            // Abiertos que vencen hoy o en los próximos días (Ticket.DiasVencePronto); se filtra en el servidor.
+            case "pronto": f.ProximoAVencer = true; break;
         }
 
         _ultimoFiltroTickets = f;
         var r = await Api.BuscarTicketsAsync(f);
-        var items = r.Items.ToList();
-
-        // "Vencen en 7 días" se resuelve con el estado de vencimiento ya calculado.
-        if (_vista == "pronto")
-            items = items.Where(t => t.DiasParaVencer is >= 0 and <= 7).ToList();
-
-        _tickets = items;
-        _total = _vista == "pronto" ? items.Count : r.TotalCount;
+        _tickets = r.Items.ToList();
+        _total = r.TotalCount;
     }
 
     private string EtiquetaVista()

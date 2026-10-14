@@ -98,17 +98,12 @@ public static class ProveedorEndpoints
          .WithSummary("Responsables que han registrado reportes (para el filtro).");
 
         // Grupo de analistas del área (para limitar selectores de responsable)
-        // Analistas del grupo resueltos desde la base (userid -> nombre + uuid).
-        // Fallback a los nombres estáticos si la base no responde.
+        // Miembros configurados en la tabla local AnalistaGrupo, con el nombre resuelto en ca_contact
+        // (caché de catálogos). Un userid que no exista en ca_contact se omite y queda en el log.
         p.MapGet("/grupo-analistas", async (ITicketQueryService svc, CancellationToken ct) =>
         {
-            try
-            {
-                var lista = await svc.AnalistasDelGrupoAsync(ct);
-                if (lista.Count > 0) return Results.Ok(lista.Select(a => a.Nombre).ToList());
-            }
-            catch { }
-            return Results.Ok(TicketAnalytics.Domain.Common.GrupoAnalistas.Miembros.ToList());
+            var lista = await svc.AnalistasDelGrupoAsync(ct);
+            return Results.Ok(lista.Select(a => a.Nombre).ToList());
         }).WithSummary("Analistas del grupo/área (nombres) para selectores de responsable.");
 
         // Analistas del grupo con detalle (userid + uuid), para filtros por asignatario.

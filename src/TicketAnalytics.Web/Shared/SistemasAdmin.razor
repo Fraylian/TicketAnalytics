@@ -1,0 +1,104 @@
+@* Pestaña "Sistemas" del módulo de Proveedores: cada sistema con el proveedor que responde por él.
+   Un sistema con casos clasificados no se borra, se desactiva. *@
+@inject TicketAnalyticsApi Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<div class="panel pa-0">
+    <div class="d-flex justify-space-between align-center pa-4 pb-2 flex-wrap gap-2">
+        <span class="ta-resumen-pag">
+            <b>@_sistemas.Count(s => s.Activo)</b> sistemas activos ·
+            <b>@_sistemas.Count(s => s.Activo && s.ProveedorId is null)</b> con proveedor por asignar
+        </span>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => Abrir(null))">Nuevo sistema</MudButton>
+    </div>
+    @if (_cargando)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    <MudTable Items="_sistemas" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" Class="ta-tabla-click" T="SistemaDto"
+              OnRowClick="@((TableRowClickEventArgs<SistemaDto> a) => Abrir(a.Item!))">
+        <HeaderContent>
+            <MudTh>Sistema</MudTh><MudTh>Proveedor</MudTh><MudTh>Criticidad</MudTh><MudTh>Subtipo act. datos</MudTh>
+            <MudTh Style="text-align:right">Casos</MudTh><MudTh>Activo</MudTh><MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Sistema">
+                <span class="ta-punto" style="@($"background:{context.Color ?? "var(--bsc-azul)"}")"></span><b>@context.Nombre</b>
+                @if (!string.IsNullOrWhiteSpace(context.Descripcion)) { <div class="ta-tenue" style="font-size:.75rem">@context.Descripcion</div> }
+            </MudTd>
+            <MudTd DataLabel="Proveedor">
+                @if (context.Proveedor is null) { <span class="ta-tag">Por asignar</span> }
+                else { @context.Proveedor }
+            </MudTd>
+            <MudTd DataLabel="Criticidad">@CriticidadSistema.Nombre(context.Criticidad)</MudTd>
+            <MudTd DataLabel="Subtipo act. datos">@(context.AplicaSubtipoActualizacion ? "Sí" : "—")</MudTd>
+            <MudTd DataLabel="Casos" Style="text-align:right">@context.CasosClasificados</MudTd>
+            <MudTd DataLabel="Activo">
+                @if (context.Activo) { <span class="ta-tag ok">Activo</span> }
+                else { <span class="ta-tag">Inactivo</span> }
+            </MudTd>
+            <MudTd>
+                <div @onclick:stopPropagation="true">
+                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Acciones del sistema">
+                        <MudMenuItem Icon="@Icons.Material.Filled.Edit" OnClick="@(() => Abrir(context))">Editar</MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.Delete" OnClick="@(() => Eliminar(context))">Eliminar</MudMenuItem>
+                    </MudMenu>
+                </div>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <EmptyState Mensaje="No hay sistemas en el catálogo." Icono="@Icons.Material.Filled.Dns" />
+        </NoRecordsContent>
+    </MudTable>
+</div>
+
+@code {
+    /// <summary>Proveedores del catálogo (los carga la página de Proveedores).</summary>
+    [Parameter] public List<ProveedorCatalogoDto> Proveedores { get; set; } = new();
+    /// <summary>Se dispara al guardar o eliminar, para que la página refresque cachés.</summary>
+    [Parameter] public EventCallback OnCambio { get; set; }
+
+    private List<SistemaDto> _sistemas = new();
+    private bool _cargando = true;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        try { _sistemas = await Api.SistemasAsync(); }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        finally { _cargando = false; }
+    }
+
+    private async Task Abrir(SistemaDto? s)
+    {
+        var dlg = await DialogService.ShowAsync<SistemaDialog>(s is null ? "Nuevo sistema" : $"Editar · {s.Nombre}",
+            new DialogParameters { ["Existente"] = s, ["Proveedores"] = Proveedores },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true });
+        var r = await dlg.Result;
+        if (r is { Canceled: false })
+        {
+            await Cargar();
+            await OnCambio.InvokeAsync();
+        }
+    }
+
+    private async Task Eliminar(SistemaDto s)
+    {
+        var aviso = s.CasosClasificados > 0
+            ? $"{s.Nombre} tiene {s.CasosClasificados} caso(s) clasificados: se desactivará para conservar el histórico."
+            : $"¿Eliminar {s.Nombre}?";
+        var ok = await DialogService.ShowMessageBox("Eliminar sistema", aviso, yesText: "Aceptar", cancelText: "Cancelar");
+        if (ok != true) return;
+        try
+        {
+            var r = await Api.EliminarSistemaAsync(s.SistemaId);
+            Snackbar.Add(r.Mensaje, r.Desactivado ? Severity.Info : Severity.Success);
+            await Cargar();
+            await OnCambio.InvokeAsync();
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+    }
+}

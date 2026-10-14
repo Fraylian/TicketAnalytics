@@ -1,3 +1,5 @@
+using TicketAnalytics.Web.Models;
+
 namespace TicketAnalytics.Web.Services;
 
 /// <summary>
@@ -38,4 +40,12 @@ public sealed class CatalogoCache
     public const string Analistas = "catalogo:analistas";
     public const string Proveedores = "catalogo:proveedores";
     public const string CategoriasVP = "catalogo:categorias-vp";
+    public const string Parametros = "catalogo:parametros";
+
+    /// <summary>Parámetros de negocio (cacheados 10 min). Si la API falla se usan los de respaldo.</summary>
+    public async Task<ParametrosNegocioDto> ParametrosAsync(TicketAnalyticsApi api)
+    {
+        try { return await ObtenerAsync(Parametros, () => api.ParametrosAsync()); }
+        catch { return new ParametrosNegocioDto(); }
+    }
 }

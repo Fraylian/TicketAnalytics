@@ -26,6 +26,14 @@ public class ActividadDiaria
     public EstadoActividad Estado { get; set; }
     public string? Comentario { get; set; }
 
+    // Clasificación en conjunto con la gestión: sistema → proveedor → tipo de solución.
+    public int? SistemaId { get; set; }
+    public Sistema? Sistema { get; set; }
+    /// <summary>Proveedor responsable. Si hay sistema con proveedor, se toma del sistema.</summary>
+    public int? ProveedorId { get; set; }
+    public Proveedor? Proveedor { get; set; }
+    public TipoSolucion TipoSolucion { get; set; } = TipoSolucion.NoEspecificado;
+
     // Auditoría
     public string? CreadoPor { get; set; }
     public DateTime CreadoEn { get; set; } = DateTime.UtcNow;

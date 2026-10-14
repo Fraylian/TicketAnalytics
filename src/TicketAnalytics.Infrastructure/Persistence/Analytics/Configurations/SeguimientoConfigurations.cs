@@ -37,7 +37,6 @@ public class TicketSeguimientoConfig : IEntityTypeConfiguration<TicketSeguimient
         e.Property(x => x.NotaReporteVP).HasMaxLength(2000);
 
         // Datos estructurados de la gestión (guardados como int)
-        e.Property(x => x.Sistema).HasConversion<int>();
         e.Property(x => x.TipoSolucion).HasConversion<int>();
         e.Property(x => x.TipoActualizacionDatos).HasConversion<int>();
         e.Property(x => x.TicketProveedor).HasMaxLength(40);
@@ -46,13 +45,24 @@ public class TicketSeguimientoConfig : IEntityTypeConfiguration<TicketSeguimient
         e.Property(x => x.TicketCausaRaiz).HasMaxLength(40);
 
         // Índices para los indicadores del dashboard (agrupar por sistema/solución)
-        e.HasIndex(x => x.Sistema);
+        e.HasIndex(x => x.SistemaId);
         e.HasIndex(x => x.TipoSolucion);
         e.HasIndex(x => x.TipoActualizacionDatos);
 
         // El reporte se consulta SIEMPRE por "va al VP + período": índice compuesto.
         e.HasIndex(x => new { x.VaReporteVP, x.PeriodoReporteVP });
         e.HasIndex(x => x.ReportadoProveedor);
+
+        // Sistema (eje de clasificación) y tipo de corrección: catálogos locales.
+        // Restrict: un sistema con casos no se borra, se desactiva.
+        e.HasOne(x => x.Sistema)
+            .WithMany(si => si.Seguimientos)
+            .HasForeignKey(x => x.SistemaId)
+            .OnDelete(DeleteBehavior.Restrict);
+        e.HasOne(x => x.TipoCorreccion)
+            .WithMany()
+            .HasForeignKey(x => x.TipoCorreccionId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         e.HasOne(x => x.CategoriaVP)
             .WithMany(c => c.Seguimientos)
@@ -163,5 +173,36 @@ public class CategoriaReporteVPConfig : IEntityTypeConfiguration<CategoriaReport
         e.Property(x => x.Activo);   // sin HasDefaultValue: un false explícito debe guardarse como false
         e.HasIndex(x => x.Nombre).IsUnique();
         e.HasIndex(x => new { x.Activo, x.Orden });
+    }
+}
+
+public class SistemaConfig : IEntityTypeConfiguration<Sistema>
+{
+    public void Configure(EntityTypeBuilder<Sistema> e)
+    {
+        e.ToTable("Sistema");
+        e.HasKey(x => x.SistemaId);
+        e.Property(x => x.Nombre).HasMaxLength(120).IsRequired();
+        e.Property(x => x.Descripcion).HasMaxLength(400);
+        e.Property(x => x.Color).HasMaxLength(20);
+        // Sin HasDefaultValue en Activo/Criticidad/Orden/AplicaSubtipo: un 0/false explícito debe escribirse.
+        e.HasIndex(x => x.Nombre).IsUnique();
+        e.HasIndex(x => x.ProveedorId);
+        e.HasOne(x => x.Proveedor)
+            .WithMany(p => p.Sistemas)
+            .HasForeignKey(x => x.ProveedorId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public class TipoCorreccionConfig : IEntityTypeConfiguration<TipoCorreccion>
+{
+    public void Configure(EntityTypeBuilder<TipoCorreccion> e)
+    {
+        e.ToTable("TipoCorreccion");
+        e.HasKey(x => x.TipoCorreccionId);
+        e.Property(x => x.Nombre).HasMaxLength(120).IsRequired();
+        e.Property(x => x.Descripcion).HasMaxLength(400);
+        e.HasIndex(x => x.Nombre).IsUnique();
     }
 }

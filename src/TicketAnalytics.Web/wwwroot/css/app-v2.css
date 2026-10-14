@@ -191,7 +191,7 @@
     cursor: pointer; user-select: none; font-family: inherit; white-space: nowrap;
     transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
 }
-.ta-pill:hover { border-color: var(--pill); background: color-mix(in srgb, var(--pill) 7%, #fff); }
+.ta-pill:hover { border-color: var(--pill); background: color-mix(in srgb, var(--pill) 7%, var(--bsc-superficie)); }
 .ta-pill:active { transform: scale(.97); }
 .ta-pill.activa { background: var(--pill); border-color: var(--pill); color: #fff; box-shadow: 0 4px 12px color-mix(in srgb, var(--pill) 30%, transparent); }
 .ta-pill .cnt { font-size: .7rem; padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, var(--pill) 12%, transparent); }
@@ -209,7 +209,7 @@
 .semaforo-item { transition: transform var(--transition-fast) var(--ease-spring), box-shadow var(--transition-fast), opacity var(--transition-fast); position: relative; overflow: hidden; border: none; font-family: inherit; }
 .semaforo-item.click { cursor: pointer; }
 .semaforo-item.click:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(0, 0, 0, .14); }
-.semaforo-item.sel { box-shadow: 0 0 0 3px #fff, 0 0 0 5px rgba(15, 61, 107, .55); transform: translateY(-2px); }
+.semaforo-item.sel { box-shadow: 0 0 0 3px var(--bsc-superficie), 0 0 0 5px rgba(15, 61, 107, .55); transform: translateY(-2px); }
 .semaforo.con-sel .semaforo-item:not(.sel) { opacity: .6; }
 .semaforo-item::after { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(255,255,255,.18), transparent 55%); pointer-events: none; }
 
@@ -283,7 +283,7 @@
     color: var(--texto-primario); font-size: .76rem; font-weight: 600; cursor: pointer; font-family: inherit;
     transition: all var(--transition-fast);
 }
-.ta-accion:hover:not(:disabled) { border-color: var(--bsc-azul); background: var(--bsc-azul-suave); color: var(--bsc-azul-profundo); transform: translateY(-2px); }
+.ta-accion:hover:not(:disabled) { border-color: var(--bsc-azul); background: var(--bsc-azul-suave); color: var(--bsc-azul-texto); transform: translateY(-2px); }
 .ta-accion:disabled { opacity: .45; cursor: not-allowed; }
 .ta-accion .mud-icon-root { color: var(--bsc-azul); }
 .ta-estado-gestion { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -302,7 +302,7 @@
     background: linear-gradient(135deg, var(--bsc-azul-suave), var(--bsc-superficie));
     border: 1px solid var(--bsc-borde);
 }
-.ta-detalle-cab .ref { font-size: 1.35rem; font-weight: 750; color: var(--bsc-azul-profundo); letter-spacing: -.02em; }
+.ta-detalle-cab .ref { font-size: 1.35rem; font-weight: 750; color: var(--bsc-azul-texto); letter-spacing: -.02em; }
 .ta-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 18px; }
 .ta-campos .c span { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-tenue); }
 .ta-campos .c b { font-weight: 500; font-size: .88rem; color: var(--texto-primario); }
@@ -368,7 +368,7 @@
     background: var(--bsc-superficie); animation: ta-rise 380ms var(--ease-out) both;
 }
 .ta-alerta-item.alto { border-left-color: var(--op-riesgo); }
-.ta-alerta-item.critico { border-left-color: var(--op-vencido); background: #FFF7F6; }
+.ta-alerta-item.critico { border-left-color: var(--op-vencido); background: color-mix(in srgb, var(--color-error) 5%, var(--bsc-superficie)); }
 .ta-alerta-item .reloj {
     width: 58px; height: 58px; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center;
     background: var(--color-alerta-suave); color: #B45309;
@@ -376,8 +376,111 @@
 .ta-alerta-item.critico .reloj { background: var(--color-error-suave); color: var(--color-error); animation: ta-pulso-rojo 1.8s infinite; }
 .ta-alerta-item .reloj b { font-size: 1.35rem; line-height: 1; font-variant-numeric: tabular-nums; }
 .ta-alerta-item .reloj span { font-size: .62rem; text-transform: uppercase; letter-spacing: .08em; }
-.ta-alerta-item .ref { font-weight: 750; color: var(--bsc-azul-profundo); font-size: 1rem; }
+.ta-alerta-item .ref { font-weight: 750; color: var(--bsc-azul-texto); font-size: 1rem; }
 .ta-alerta-item .titulo { font-size: .84rem; color: var(--texto-primario); margin-top: 2px; }
 .ta-alerta-item .meta { font-size: .74rem; color: var(--texto-secundario); display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .ta-tag.urgente { background: var(--color-error); color: #fff; animation: ta-pulso-rojo 1.8s infinite; }
 @media (max-width: 600px) { .ta-alerta-item { grid-template-columns: 48px 1fr; } .ta-alerta-item > .mud-button-root { grid-column: 1 / -1; } }
+
+/* ---- Sistemas afectados (punto de color del sistema) ---- */
+.ta-punto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+
+/* =====================================================================
+   MODO NOCHE
+   Se activa con la clase "ta-oscuro" en <html> (botón sol/luna de la barra
+   superior; la preferencia se guarda en el navegador). Casi todo el CSS usa
+   tokens, así que basta con redefinirlos; abajo van los pocos casos con color fijo.
+   ===================================================================== */
+html.ta-oscuro {
+    color-scheme: dark;
+
+    --bsc-azul: #4C8FD0;
+    --bsc-azul-texto: #8DBBEA;
+    --bsc-azul-suave: #16314F;
+    --bsc-verde: #8BC94A;
+    --bsc-verde-suave: #1D3317;
+
+    --bsc-fondo: #0F1722;
+    --bsc-superficie: #172231;
+    --bsc-superficie-2: #1B2738;
+    --bsc-superficie-3: #223044;
+    --bsc-borde: #2A3A50;
+    --bsc-borde-fuerte: #36495F;
+
+    --color-exito: #5CB85F;
+    --color-exito-suave: #193222;
+    --color-alerta: #FFA347;
+    --color-alerta-suave: #3A2A15;
+    --color-error: #EF5F5C;
+    --color-error-suave: #3B1D1F;
+    --color-info: #4FA3EE;
+    --color-info-suave: #14304D;
+
+    --texto-primario: #E6EDF5;
+    --texto-secundario: #A9B8C9;
+    --texto-tenue: #7D8FA5;
+
+    --dato-1: #5A9BD5;
+    --dato-2: #26A69A;
+    --dato-3: #8E7CFF;
+    --dato-4: #F08A3C;
+    --dato-5: #B061C9;
+    --dato-6: #8FA3B8;
+    --dato-7: #E0518A;
+    --dato-8: #5CB85F;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35);
+    --shadow-md: 0 6px 18px rgba(0, 0, 0, .35);
+    --shadow-lg: 0 14px 32px rgba(0, 0, 0, .45);
+    --velo-actualizando: rgba(15, 23, 34, .45);
+}
+html.ta-oscuro body { background: var(--bsc-fondo); }
+
+/* Etiquetas con texto de color fijo pensado para fondo claro */
+html.ta-oscuro .ta-tag.warn,
+html.ta-oscuro .ta-alerta-item .reloj { color: #FFB870; }
+html.ta-oscuro .ta-tag.vp { background: #2A2350; color: #B9ACFF; }
+
+/* Gráficos (ApexCharts escribe colores fijos en el SVG: se corrigen aquí) */
+html.ta-oscuro .apexcharts-text,
+html.ta-oscuro .apexcharts-text tspan,
+html.ta-oscuro .apexcharts-xaxis-label,
+html.ta-oscuro .apexcharts-yaxis-label { fill: var(--texto-secundario) !important; }
+html.ta-oscuro .apexcharts-datalabels-group text { fill: var(--texto-primario) !important; }
+html.ta-oscuro .apexcharts-gridline,
+html.ta-oscuro .apexcharts-grid-borders line,
+html.ta-oscuro .apexcharts-xaxis line,
+html.ta-oscuro .apexcharts-yaxis line { stroke: var(--bsc-borde) !important; }
+html.ta-oscuro .apexcharts-pie-area,
+html.ta-oscuro .apexcharts-donut-slice,
+html.ta-oscuro .apexcharts-bar-area { stroke: var(--bsc-superficie) !important; }
+html.ta-oscuro .apexcharts-tooltip.apexcharts-theme-light {
+    background: var(--bsc-superficie-2) !important; color: var(--texto-primario) !important; border-color: var(--bsc-borde) !important;
+}
+html.ta-oscuro .apexcharts-xaxistooltip,
+html.ta-oscuro .apexcharts-yaxistooltip { background: var(--bsc-superficie-2) !important; color: var(--texto-primario) !important; border-color: var(--bsc-borde) !important; }
+html.ta-oscuro .apexcharts-marker { stroke: var(--bsc-superficie) !important; }
+
+/* Transición suave al cambiar de tema (solo colores, sin mover nada) */
+html.ta-cambiando-tema *, html.ta-cambiando-tema *::before, html.ta-cambiando-tema *::after {
+    transition: background-color 260ms ease, border-color 260ms ease, color 260ms ease, fill 260ms ease !important;
+}
+
+/* Botón sol/luna */
+.ta-tema-btn .mud-icon-root { transition: transform 420ms var(--ease-spring); }
+.ta-tema-btn:hover .mud-icon-root { transform: rotate(-25deg); }
+
+/* Alertas: el aviso temprano (aún no urgente) va en azul para distinguirlo de lo urgente */
+.ta-alerta-item.medio { border-left-color: var(--color-info); }
+.ta-alerta-item.medio .reloj { background: var(--color-info-suave); color: var(--color-info); }
+html.ta-oscuro .ta-alerta-item.medio .reloj { color: var(--color-info); }
+
+/* Modo noche: los colores de datos fijos (azul institucional #15528E, etc.) se pierden sobre
+   fondo oscuro; se aclaran las barras sin cambiar su tono. */
+html.ta-oscuro .ta-apilada .seg,
+html.ta-oscuro .ta-barlist .riel > *,
+html.ta-oscuro .barra-riesgo > div { filter: brightness(1.45) saturate(1.1); }
+html.ta-oscuro .apexcharts-bar-series path,
+html.ta-oscuro .apexcharts-area-series path,
+html.ta-oscuro .apexcharts-pie-series path { filter: brightness(1.35); }

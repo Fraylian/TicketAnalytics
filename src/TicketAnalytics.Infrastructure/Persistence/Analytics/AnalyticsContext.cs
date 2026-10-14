@@ -28,13 +28,18 @@ public class AnalyticsContext : DbContext, IAnalyticsDbContext
     public DbSet<Tecnico> Tecnicos => Set<Tecnico>();
     public DbSet<ActividadDiaria> ActividadesDiarias => Set<ActividadDiaria>();
     public DbSet<CategoriaReporteVP> CategoriasReporteVP => Set<CategoriaReporteVP>();
+    public DbSet<ParametroSistema> ParametrosSistema => Set<ParametroSistema>();
+    public DbSet<AnalistaGrupo> AnalistasGrupo => Set<AnalistaGrupo>();
+    public DbSet<Sistema> Sistemas => Set<Sistema>();
+    public DbSet<TipoCorreccion> TiposCorreccion => Set<TipoCorreccion>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
-        // Carga TODAS las IEntityTypeConfiguration de este ensamblado.
-        // Sin filtro de namespace: es lo que garantiza que CategoriaAlcanceConfig
-        // (y las demas) se apliquen siempre.
-        b.ApplyConfigurationsFromAssembly(typeof(AnalyticsContext).Assembly);
+        // Carga las IEntityTypeConfiguration de este ensamblado EXCEPTO las de MDB.
+        // Antes no había filtro y el modelo local incluía call_req, chg, attached_sla, etc.:
+        // en una base nueva EnsureCreated creaba copias vacías de esas tablas de MDB aquí.
+        b.ApplyConfigurationsFromAssembly(typeof(AnalyticsContext).Assembly,
+            t => t.Namespace?.Contains("Sdm.Configurations") != true);
         base.OnModelCreating(b);
     }
 }

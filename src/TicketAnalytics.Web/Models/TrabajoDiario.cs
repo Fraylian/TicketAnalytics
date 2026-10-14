@@ -25,6 +25,12 @@ public class ActividadDto
     public int Estado { get; set; }
     public string EstadoTexto { get; set; } = "";
     public string? Comentario { get; set; }
+    public int? SistemaId { get; set; }
+    public string? Sistema { get; set; }
+    public int? ProveedorId { get; set; }
+    public string? Proveedor { get; set; }
+    public int TipoSolucion { get; set; }
+    public string? TipoSolucionTexto { get; set; }
     public string? CreadoPor { get; set; }
     public DateTime CreadoEn { get; set; }
     public string? ModificadoPor { get; set; }
@@ -45,6 +51,9 @@ public class GuardarActividadRequest
     public decimal Horas { get; set; }
     public int Estado { get; set; }
     public string? Comentario { get; set; }
+    public int? SistemaId { get; set; }
+    public int? ProveedorId { get; set; }
+    public int? TipoSolucion { get; set; }
     public string? Usuario { get; set; }
 }
 
@@ -58,6 +67,8 @@ public class ActividadFiltro
     public string? Proyecto { get; set; }
     public string? NoSolicitud { get; set; }
     public string? Texto { get; set; }
+    public int? SistemaId { get; set; }
+    public int? ProveedorId { get; set; }
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 10;
     public string OrderBy { get; set; } = "fecha";

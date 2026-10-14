@@ -3,6 +3,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject FileDownloadService Descargas
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Proveedores · TicketAnalytics</PageTitle>
@@ -242,7 +243,7 @@ else
         </MudTabPanel>
 
         <!-- ===== Catálogo de proveedores ===== -->
-        <MudTabPanel Text="Catálogo y SLA" Icon="@Icons.Material.Filled.Business">
+        <MudTabPanel Text="Proveedores y SLA" Icon="@Icons.Material.Filled.Business">
             <div class="panel pa-0">
                 <div class="d-flex justify-space-between align-center pa-4 pb-2 flex-wrap gap-2">
                     <span class="ta-resumen-pag"><b>@_proveedores.Count(p => p.Activo)</b> proveedores activos · SLA de respuesta por severidad</span>
@@ -279,6 +280,16 @@ else
                 </MudTable>
             </div>
         </MudTabPanel>
+
+        <!-- ===== Sistemas (cada uno con su proveedor responsable) ===== -->
+        <MudTabPanel Text="Sistemas" Icon="@Icons.Material.Filled.Dns">
+            <SistemasAdmin Proveedores="_proveedores" />
+        </MudTabPanel>
+
+        <!-- ===== Tipos de corrección (catálogo propio) ===== -->
+        <MudTabPanel Text="Tipos de corrección" Icon="@Icons.Material.Filled.Tune">
+            <TiposCorreccionAdmin />
+        </MudTabPanel>
     </MudTabs>
     </div>
 }
@@ -312,6 +323,10 @@ else
             _grupo = tGrupo.Result;
         }
         catch (Exception ex) { Snackbar.Add($"No se pudieron cargar los catálogos: {ex.Message}", Severity.Warning); }
+
+        // Acceso directo a una pestaña: /proveedores?tab=sistemas | correcciones | catalogo
+        if (UrlQuery.Leer(Nav).TryGetValue("tab", out var tab))
+            _tab = tab switch { "detalles" => 1, "catalogo" => 2, "sistemas" => 3, "correcciones" => 4, _ => 0 };
         await Recargar();
     }
 

@@ -1,0 +1,95 @@
+@* Alta / edición de un sistema del catálogo, con su proveedor responsable (N:1). *@
+@inject TicketAnalyticsApi Api
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="8">
+                <MudTextField @bind-Value="_req.Nombre" Label="Nombre del sistema *" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Required="true" MaxLength="120" Placeholder="BSC en Línea, ITC, Extreme…" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="int?" @bind-Value="_req.ProveedorId" Label="Proveedor responsable" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Clearable="true" HelperText="Vacío = por asignar o interno">
+                    @foreach (var p in Proveedores)
+                    {
+                        <MudSelectItem T="int?" Value="@((int?)p.ProveedorId)">@p.Nombre@(p.Activo ? "" : " (inactivo)")</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_req.Descripcion" Label="Descripción" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="400" Lines="2" />
+            </MudItem>
+            <MudItem xs="6" md="4">
+                <MudSelect T="int" @bind-Value="_req.Criticidad" Label="Criticidad" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (var c in CriticidadSistema.Todos)
+                    {
+                        <MudSelectItem T="int" Value="@c.Valor">@c.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" md="4">
+                <MudNumericField T="int" @bind-Value="_req.Orden" Label="Orden" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="Menor aparece primero" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudTextField @bind-Value="_req.Color" Label="Color en gráficos" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="#15528E" MaxLength="20"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Circle"
+                              AdornmentColor="Color.Default" HelperText="Hex, p. ej. #15528E" />
+                @if (!string.IsNullOrWhiteSpace(_req.Color))
+                {
+                    <span class="ta-punto" style="@($"background:{_req.Color};width:14px;height:14px")"></span><small class="ta-tenue">vista previa</small>
+                }
+            </MudItem>
+            <MudItem xs="12">
+                <MudCheckBox T="bool" @bind-Value="_req.AplicaSubtipoActualizacion" Color="Color.Primary"
+                             Label="Exige subtipo cuando la solución es «Actualización de datos» (como BSC en Línea)" />
+                <MudCheckBox T="bool" @bind-Value="_req.Activo" Label="Sistema activo (aparece en los formularios)" Color="Color.Success" />
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Guardar" Disabled="_guardando">
+            @(_guardando ? "Guardando…" : "Guardar")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public SistemaDto? Existente { get; set; }
+    [Parameter] public List<ProveedorCatalogoDto> Proveedores { get; set; } = new();
+
+    private GuardarSistemaRequest _req = new();
+    private bool _guardando;
+
+    protected override void OnInitialized()
+    {
+        if (Existente is not null)
+        {
+            _req = new GuardarSistemaRequest
+            {
+                SistemaId = Existente.SistemaId, Nombre = Existente.Nombre, Descripcion = Existente.Descripcion,
+                ProveedorId = Existente.ProveedorId, Criticidad = Existente.Criticidad, Activo = Existente.Activo,
+                Orden = Existente.Orden, Color = Existente.Color, AplicaSubtipoActualizacion = Existente.AplicaSubtipoActualizacion
+            };
+        }
+    }
+
+    private async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_req.Nombre)) { Snackbar.Add("El nombre es obligatorio.", Severity.Warning); return; }
+        _guardando = true;
+        try
+        {
+            await Api.GuardarSistemaAsync(_req);
+            Snackbar.Add("Sistema guardado.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception ex) { Snackbar.Add($"Error: {ex.Message}", Severity.Error); }
+        finally { _guardando = false; }
+    }
+}

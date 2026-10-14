@@ -1,0 +1,106 @@
+@* Pestaña "Tipos de corrección": catálogo propio, distinto del tipo de solución.
+   No trae valores precargados: los define el área. Edición en línea. *@
+@inject TicketAnalyticsApi Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<div class="panel">
+    <div class="d-flex align-start gap-3 flex-wrap mb-3">
+        <MudTextField @bind-Value="_req.Nombre" Label="@(_req.TipoCorreccionId is null ? "Nuevo tipo de corrección" : "Editar tipo de corrección")"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="120" Style="min-width:240px" />
+        <MudTextField @bind-Value="_req.Descripcion" Label="Descripción" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="400" Style="min-width:280px" />
+        <MudNumericField T="int" @bind-Value="_req.Orden" Label="Orden" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:110px" />
+        <MudCheckBox T="bool" @bind-Value="_req.Activo" Label="Activo" Color="Color.Success" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Guardar" Disabled="_guardando" Class="mt-1">
+            @(_guardando ? "Guardando…" : (_req.TipoCorreccionId is null ? "Agregar" : "Guardar"))
+        </MudButton>
+        @if (_req.TipoCorreccionId is not null)
+        {
+            <MudButton Variant="Variant.Text" OnClick="Limpiar" Class="mt-1">Cancelar</MudButton>
+        }
+    </div>
+
+    <MudTable Items="_tipos" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm" Class="ta-tabla-click" T="TipoCorreccionDto"
+              OnRowClick="@((TableRowClickEventArgs<TipoCorreccionDto> a) => Editar(a.Item!))">
+        <HeaderContent>
+            <MudTh>Tipo de corrección</MudTh><MudTh>Descripción</MudTh><MudTh>Orden</MudTh>
+            <MudTh Style="text-align:right">Casos</MudTh><MudTh>Activo</MudTh><MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Tipo"><b>@context.Nombre</b></MudTd>
+            <MudTd DataLabel="Descripción">@(context.Descripcion ?? "—")</MudTd>
+            <MudTd DataLabel="Orden">@context.Orden</MudTd>
+            <MudTd DataLabel="Casos" Style="text-align:right">@context.Usos</MudTd>
+            <MudTd DataLabel="Activo">
+                @if (context.Activo) { <span class="ta-tag ok">Activo</span> }
+                else { <span class="ta-tag">Inactivo</span> }
+            </MudTd>
+            <MudTd>
+                <div @onclick:stopPropagation="true">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" AriaLabel="Eliminar" OnClick="@(() => Eliminar(context))" />
+                </div>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <EmptyState Mensaje="Todavía no hay tipos de corrección. Agrega los que maneja el área." Icono="@Icons.Material.Filled.Tune" />
+        </NoRecordsContent>
+    </MudTable>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnCambio { get; set; }
+
+    private List<TipoCorreccionDto> _tipos = new();
+    private GuardarTipoCorreccionRequest _req = new();
+    private bool _guardando;
+
+    protected override async Task OnInitializedAsync() => await Cargar();
+
+    private async Task Cargar()
+    {
+        try { _tipos = await Api.TiposCorreccionAsync(); }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+    }
+
+    private void Editar(TipoCorreccionDto t)
+        => _req = new GuardarTipoCorreccionRequest
+        {
+            TipoCorreccionId = t.TipoCorreccionId, Nombre = t.Nombre, Descripcion = t.Descripcion, Activo = t.Activo, Orden = t.Orden
+        };
+
+    private void Limpiar() => _req = new();
+
+    private async Task Guardar()
+    {
+        if (string.IsNullOrWhiteSpace(_req.Nombre)) { Snackbar.Add("Escribe el nombre del tipo de corrección.", Severity.Warning); return; }
+        _guardando = true;
+        try
+        {
+            await Api.GuardarTipoCorreccionAsync(_req);
+            Snackbar.Add("Tipo de corrección guardado.", Severity.Success);
+            Limpiar();
+            await Cargar();
+            await OnCambio.InvokeAsync();
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        finally { _guardando = false; }
+    }
+
+    private async Task Eliminar(TipoCorreccionDto t)
+    {
+        var aviso = t.Usos > 0
+            ? $"{t.Nombre} está en {t.Usos} caso(s): se desactivará para conservar el histórico."
+            : $"¿Eliminar {t.Nombre}?";
+        var ok = await DialogService.ShowMessageBox("Eliminar tipo de corrección", aviso, yesText: "Aceptar", cancelText: "Cancelar");
+        if (ok != true) return;
+        try
+        {
+            var r = await Api.EliminarTipoCorreccionAsync(t.TipoCorreccionId);
+            Snackbar.Add(r.Mensaje, r.Desactivado ? Severity.Info : Severity.Success);
+            if (_req.TipoCorreccionId == t.TipoCorreccionId) Limpiar();
+            await Cargar();
+            await OnCambio.InvokeAsync();
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+    }
+}

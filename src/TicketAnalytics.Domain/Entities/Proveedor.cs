@@ -18,4 +18,7 @@ public class Proveedor
     public int? SlaBajoHoras { get; set; }
 
     public List<ReporteProveedor> Reportes { get; set; } = new();
+
+    /// <summary>Sistemas de los que este proveedor es responsable (N:1 desde Sistema).</summary>
+    public List<Sistema> Sistemas { get; set; } = new();
 }

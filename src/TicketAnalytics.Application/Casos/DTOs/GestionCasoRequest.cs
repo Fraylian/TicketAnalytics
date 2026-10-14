@@ -22,9 +22,10 @@ public class GestionCasoRequest
     public DateTime? ProximoSeguimiento { get; set; }
 
     // --- Datos estructurados de la gestión (puntos 5, 6, 7) ---
-    public int? Sistema { get; set; }                   // SistemaAfectado
+    public int? Sistema { get; set; }                   // SistemaId del catálogo local (0 = quitar)
+    public int? TipoCorreccionId { get; set; }          // catálogo TipoCorreccion (0 = quitar)
     public int? TipoSolucion { get; set; }              // TipoSolucion
-    public int? TipoActualizacionDatos { get; set; }    // TipoActualizacionDatos (solo BSC en Línea + Actualización de datos)
+    public int? TipoActualizacionDatos { get; set; }    // TipoActualizacionDatos (solo si el sistema lo exige + Actualización de datos)
     public string? AreaDestino { get; set; }
     public string? Comentarios { get; set; }            // qué se hizo (va como avance)
     public string? CausaRaiz { get; set; }

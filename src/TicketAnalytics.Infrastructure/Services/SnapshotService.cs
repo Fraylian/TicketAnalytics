@@ -2,29 +2,51 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using TicketAnalytics.Application.Common.Interfaces;
+using TicketAnalytics.Domain.Common;
 using TicketAnalytics.Domain.Entities;
 using TicketAnalytics.Infrastructure.Persistence.Analytics;
 using TicketAnalytics.Infrastructure.Persistence.Sdm;
+using TicketAnalytics.Infrastructure.Services.Parametros;
 
 namespace TicketAnalytics.Infrastructure.Services;
 
-/// <summary>Captura snapshots de tickets en alcance (lee MDB) y registra deltas en la base LOCAL.</summary>
+/// <summary>
+/// Captura snapshots de tickets en alcance (lee MDB) y registra deltas en la base LOCAL.
+/// Hoy ningún flujo lo invoca. Si se activa: solo toma tickets abiertos desde la fecha base
+/// (call_req_x0 por open_date), nunca el histórico completo del alcance.
+/// </summary>
 public class SnapshotService : ISnapshotService
 {
     private readonly SdmReadContext _sdm;
     private readonly AnalyticsContext _analytics;
-    public SnapshotService(SdmReadContext sdm, AnalyticsContext analytics) { _sdm = sdm; _analytics = analytics; }
+    private readonly IParametrosProvider _parametros;
+    private readonly CatalogoSdm _catalogo;
+
+    public SnapshotService(SdmReadContext sdm, AnalyticsContext analytics, IParametrosProvider parametros, CatalogoSdm catalogo)
+    {
+        _sdm = sdm;
+        _analytics = analytics;
+        _parametros = parametros;
+        _catalogo = catalogo;
+    }
 
     public async Task<int> CapturarYDetectarCambiosAsync(CancellationToken ct = default)
     {
-        var alcance = await _analytics.CategoriasAlcance.AsNoTracking().Where(c => c.Activo).Select(c => c.Persid).ToListAsync(ct);
-        var actuales = await _sdm.CallReqs.AsNoTracking().Where(cr => alcance.Contains(cr.category!))
+        var p = await _parametros.ObtenerAsync(ct);
+        var desde = EpochRD.InicioDelDia(p.FechaBase);
+        var alcance = (await _catalogo.AlcanceAsync(ct)).Select(a => a.Persid).ToList();
+        var actuales = await _sdm.CallReqs.AsNoTracking().Where(cr => alcance.Contains(cr.category!) && cr.open_date >= desde)
             .Select(cr => new { cr.id, cr.ref_num, cr.persid, cr.category, cr.status, cr.assignee, cr.group_id, cr.open_date, cr.close_date, cr.sla_violation, cr.change }).ToListAsync(ct);
 
-        var crIds = actuales.Select(a => a.id).ToList();
-        var ultimos = await _analytics.TicketSnapshots.Where(s => crIds.Contains(s.CrId))
-            .GroupBy(s => s.CrId).Select(g => g.OrderByDescending(x => x.CapturadoEn).First()).ToListAsync(ct);
-        var ultimoPorCr = ultimos.ToDictionary(s => s.CrId);
+        // Último snapshot por ticket, en lotes de 1.000 ids (límite de 2.100 parámetros de SQL Server).
+        var ultimoPorCr = new Dictionary<int, TicketSnapshot>();
+        foreach (var lote in actuales.Select(a => a.id).Chunk(1000))
+        {
+            var ids = lote.ToList();
+            var ultimos = await _analytics.TicketSnapshots.AsNoTracking().Where(s => ids.Contains(s.CrId))
+                .GroupBy(s => s.CrId).Select(g => g.OrderByDescending(x => x.CapturadoEn).First()).ToListAsync(ct);
+            foreach (var u in ultimos) ultimoPorCr[u.CrId] = u;
+        }
 
         int cambios = 0;
         var nuevosSnap = new List<TicketSnapshot>();

@@ -45,12 +45,24 @@
         <div class="ta-campos mb-3">
             <div class="c"><span>Analista</span><b>@(Orden.AsignatarioOC ?? "Sin asignar")</b></div>
             <div class="c"><span>Categoría</span><b>@(Orden.CategoriaOC ?? "—")</b></div>
-            <div class="c"><span>Complejidad</span><b>@(Orden.ComplejidadOC ?? "Sin asignar")</b></div>
             <div class="c"><span>Apertura</span><b>@(Orden.FechaAperturaOC?.ToString("dd/MM/yyyy") ?? "—")</b></div>
             <div class="c"><span>Vencimiento</span><b>@(Orden.FechaVencimientoOC?.ToString("dd/MM/yyyy") ?? "Sin fecha")</b></div>
             <div class="c"><span>Cierre</span><b>@(Orden.FechaCierreOC?.ToString("dd/MM/yyyy") ?? "Abierta")</b></div>
             <div class="c"><span>Días restantes</span><b>@(Orden.DiasRestantes?.ToString() ?? "—")</b></div>
             <div class="c"><span>Última gestión</span><b>@(Orden.UltimaGestion.HasValue ? Formato.Hace(Orden.UltimaGestion.Value.ToLocalTime()) : "Sin gestión")</b></div>
+        </div>
+
+        @* Complejidad: define el plazo de la OC (días por nivel en ParametroSistema). Se guarda en la base local. *@
+        <div class="d-flex align-center gap-2 flex-wrap mb-3">
+            <MudSelect T="string" Value="@(Orden.ComplejidadOC ?? "SinAsignar")" ValueChanged="CambiarComplejidad" Label="Complejidad"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Disabled="_guardandoComplejidad" Style="max-width:220px">
+                <MudSelectItem T="string" Value="@("Alta")">Alta</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Media")">Media</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Baja")">Baja</MudSelectItem>
+                <MudSelectItem T="string" Value="@("SinAsignar")">Sin asignar</MudSelectItem>
+            </MudSelect>
+            @if (_guardandoComplejidad) { <MudProgressCircular Size="Size.Small" Indeterminate="true" /> }
+            else { <MudText Typo="Typo.caption" Class="ta-muted">Cambiarla recalcula el vencimiento de la OC.</MudText> }
         </div>
 
         @if (!string.IsNullOrWhiteSpace(Orden.ResumenOC))
@@ -97,6 +109,24 @@
 
     private bool _copiado;
     private bool _huboCambios;
+    private bool _guardandoComplejidad;
+
+    private async Task CambiarComplejidad(string nivel)
+    {
+        if (nivel == (Orden.ComplejidadOC ?? "SinAsignar")) return;
+        _guardandoComplejidad = true;
+        try
+        {
+            await Api.AsignarComplejidadOcAsync(Orden.NoOC, nivel, null);
+            // Se vuelve a leer la OC para mostrar el vencimiento y la situación recalculados.
+            Orden = await Api.ObtenerOrdenCambioAsync(Orden.NoOC) ?? Orden;
+            _huboCambios = true;
+            Snackbar.Add($"Complejidad de la OC {Orden.NoOC}: {(nivel == "SinAsignar" ? "sin asignar" : nivel)}", Severity.Success);
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception) { Snackbar.Add("No pudimos guardar la complejidad.", Severity.Error); }
+        finally { _guardandoComplejidad = false; }
+    }
 
     private void Cerrar()
     {

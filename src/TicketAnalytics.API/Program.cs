@@ -26,8 +26,12 @@ app.UseExceptionHandler(handler =>
         var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
         logger.LogError(ex, "Error no controlado en {Path}", context.Request.Path);
 
-        context.Response.StatusCode = ex is InvalidOperationException
-            ? StatusCodes.Status400BadRequest : StatusCodes.Status500InternalServerError;
+        context.Response.StatusCode = ex switch
+        {
+            InvalidOperationException => StatusCodes.Status400BadRequest,
+            KeyNotFoundException => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status500InternalServerError
+        };
         await context.Response.WriteAsJsonAsync(new
         {
             error = ex?.Message ?? "Error inesperado",
@@ -119,9 +123,12 @@ app.MapGet("/health", async (AnalyticsContext analytics, SdmReadContext sdm, ILo
             info["servidor"] = await Escalar(sdm, "SELECT @@SERVERNAME");
             info["baseDatos"] = await Escalar(sdm, "SELECT DB_NAME()");
             info["login"] = await Escalar(sdm, "SELECT ORIGINAL_LOGIN()");
-            info["call_req_total"] = await Escalar(sdm, "SELECT COUNT(*) FROM dbo.call_req");
-            info["chg_total"] = await Escalar(sdm, "SELECT COUNT(*) FROM dbo.chg");
-            info["prob_ctg_total"] = await Escalar(sdm, "SELECT COUNT(*) FROM dbo.prob_ctg");
+            // Filas aproximadas desde metadatos (sys.partitions): COUNT(*) sobre call_req/chg recorre
+            // la tabla completa en una base de ~190 GB; esto es instantáneo y no toca los datos.
+            const string filas = "SELECT SUM(p.rows) FROM sys.partitions AS p WHERE p.object_id = OBJECT_ID(N'dbo.{0}') AND p.index_id IN (0, 1)";
+            info["call_req_filas_aprox"] = await Escalar(sdm, string.Format(filas, "call_req"));
+            info["chg_filas_aprox"] = await Escalar(sdm, string.Format(filas, "chg"));
+            info["prob_ctg_filas_aprox"] = await Escalar(sdm, string.Format(filas, "prob_ctg"));
         }
         r["mdb"] = info;
     }

@@ -116,6 +116,36 @@
             <MudTextField @bind-Value="_form.Usuario" Label="Tu nombre (auditoría)" Variant="Variant.Outlined" Margin="Margin.Dense" />
         </MudItem>
 
+        @* Clasificación en conjunto con la gestión: sistema → proveedor → tipo de solución *@
+        <MudItem xs="12" sm="4">
+            <MudSelect T="int?" Value="_form.SistemaId" ValueChanged="OnSistemaActividadChanged" Label="Sistema" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="El proveedor se completa solo">
+                @foreach (var s in SistemasActividad)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)s.Valor)">@s.Nombre</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="int?" Value="_form.ProveedorId" ValueChanged="OnProveedorActividadChanged" Label="Proveedor" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@ProveedorFijadoPorSistema"
+                       HelperText="@(ProveedorFijadoPorSistema ? "Definido por el sistema" : "Filtra los sistemas de ese proveedor")">
+                @foreach (var p in _catalogos.Proveedores)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)p.Valor)">@p.Nombre</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="int?" @bind-Value="_form.TipoSolucion" Label="Tipo de solución" Clearable="true"
+                       Variant="Variant.Outlined" Margin="Margin.Dense">
+                @foreach (var t in _catalogos.TiposSolucion)
+                {
+                    <MudSelectItem T="int?" Value="@((int?)t.Valor)">@t.Nombre</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+
         <MudItem xs="12">
             <MudTextField @bind-Value="_form.Actividad" Label="Actividad realizada *" Variant="Variant.Outlined"
                           Lines="2" Placeholder="Describe el trabajo de manera específica…" Required="true" />
@@ -350,7 +380,7 @@
     <MudTable ServerData="CargarTabla" @ref="_tabla" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Md" T="ActividadDto">
         <HeaderContent>
             <MudTh>Fecha</MudTh><MudTh>Técnico</MudTh><MudTh>Actividad</MudTh><MudTh>Tipo</MudTh>
-            <MudTh>No. Solicitud</MudTh><MudTh>Proyecto</MudTh><MudTh Style="text-align:right">Horas</MudTh>
+            <MudTh>No. Solicitud</MudTh><MudTh>Sistema · solución</MudTh><MudTh>Proyecto</MudTh><MudTh Style="text-align:right">Horas</MudTh>
             <MudTh>Estado</MudTh><MudTh>Acciones</MudTh>
         </HeaderContent>
         <RowTemplate>
@@ -373,6 +403,14 @@
                 }
                 else if (!string.IsNullOrEmpty(context.NoSolicitud)) { <span>@context.NoSolicitud</span> }
                 else { <span class="ta-tenue">—</span> }
+            </MudTd>
+            <MudTd DataLabel="Sistema · solución">
+                @if (context.Sistema is null && context.TipoSolucionTexto is null && context.Proveedor is null) { <span class="ta-tenue">—</span> }
+                else
+                {
+                    <div>@(context.Sistema ?? "Sin sistema")</div>
+                    <small class="ta-tenue">@(context.Proveedor ?? "")@(context.Proveedor is not null && context.TipoSolucionTexto is not null ? " · " : "")@(context.TipoSolucionTexto ?? "")</small>
+                }
             </MudTd>
             <MudTd DataLabel="Proyecto">@(context.Proyecto ?? "—")</MudTd>
             <MudTd DataLabel="Horas" Style="text-align:right"><b>@context.Horas.ToString("0.##")h</b></MudTd>
@@ -411,6 +449,7 @@
     };
 
     private List<TecnicoDto> _tecnicos = new();
+    private CatalogosGestionDto _catalogos = new();
     private GuardarActividadRequest _form = new();
     private DateTime? _fecha = DateTime.Today;
     private OpcionTicketDto? _ticketSel;
@@ -436,6 +475,30 @@
         ("Hoy", 0), ("7 días", 7), ("Este mes", -1), ("Mes anterior", -2), ("30 días", 30)
     };
 
+    private SistemaOpcion? SistemaActividad => _catalogos.Sistemas.FirstOrDefault(s => s.Valor == _form.SistemaId);
+
+    /// <summary>Con un sistema que tiene proveedor, el proveedor no se elige: sale del sistema.</summary>
+    private bool ProveedorFijadoPorSistema => SistemaActividad?.ProveedorId is not null;
+
+    /// <summary>Si se eligió proveedor primero, solo sus sistemas.</summary>
+    private IEnumerable<SistemaOpcion> SistemasActividad
+        => _form.ProveedorId is null || ProveedorFijadoPorSistema
+            ? _catalogos.Sistemas
+            : _catalogos.Sistemas.Where(s => s.ProveedorId == _form.ProveedorId || s.Valor == _form.SistemaId);
+
+    private void OnSistemaActividadChanged(int? id)
+    {
+        _form.SistemaId = id;
+        var prov = SistemaActividad?.ProveedorId;
+        if (prov is not null) _form.ProveedorId = prov;
+    }
+
+    private void OnProveedorActividadChanged(int? id)
+    {
+        _form.ProveedorId = id;
+        if (id is not null && SistemaActividad is { ProveedorId: not null } s && s.ProveedorId != id) _form.SistemaId = null;
+    }
+
     private bool FormularioValido => _form.TecnicoId > 0 && !string.IsNullOrWhiteSpace(_form.Actividad) && _form.Horas > 0 && _fecha.HasValue;
 
     private double? TendenciaActividades => _resumen.TotalActividadesAnterior == 0 ? null
@@ -456,6 +519,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        try { _catalogos = await Api.CatalogosGestionAsync(); }
+        catch { /* sin catálogos los selectores de clasificación quedan vacíos; el registro sigue funcionando */ }
         try
         {
             var todos = await Api.TecnicosAsync();
@@ -713,7 +778,8 @@
         {
             ActividadId = a.ActividadId, TecnicoId = a.TecnicoId, Actividad = a.Actividad, Tipo = a.Tipo,
             NoSolicitud = a.NoSolicitud, RefNumVinculado = a.RefNumVinculado, TipoVinculo = a.TipoVinculo,
-            Proyecto = a.Proyecto, Horas = a.Horas, Estado = a.Estado, Comentario = a.Comentario, Usuario = _form.Usuario
+            Proyecto = a.Proyecto, Horas = a.Horas, Estado = a.Estado, Comentario = a.Comentario, Usuario = _form.Usuario,
+            SistemaId = a.SistemaId, ProveedorId = a.ProveedorId, TipoSolucion = a.TipoSolucion > 0 ? a.TipoSolucion : null
         };
         _fecha = a.Fecha.ToDateTime(TimeOnly.MinValue);
         _ticketSel = string.IsNullOrEmpty(a.RefNumVinculado) ? null

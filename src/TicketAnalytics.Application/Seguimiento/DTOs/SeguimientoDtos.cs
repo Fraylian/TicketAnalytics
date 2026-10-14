@@ -27,8 +27,13 @@ public class SeguimientoDto
     public int ReportadoProveedor { get; set; }              // 0=No, 1=Si, 2=Pendiente
     public DateTime? FechaReporteProveedor { get; set; }
     public string? TicketProveedor { get; set; }
-    public int Sistema { get; set; }
+    public int Sistema { get; set; }                         // SistemaId (0 = sin sistema)
     public string SistemaTexto { get; set; } = "";
+    /// <summary>Proveedor responsable del sistema (sale del catálogo).</summary>
+    public int? ProveedorSistemaId { get; set; }
+    public string? ProveedorSistema { get; set; }
+    public int TipoCorreccionId { get; set; }
+    public string TipoCorreccionTexto { get; set; } = "";
     public int TipoSolucion { get; set; }
     public string TipoSolucionTexto { get; set; } = "";
     public int TipoActualizacionDatos { get; set; }

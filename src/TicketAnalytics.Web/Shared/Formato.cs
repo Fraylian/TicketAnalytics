@@ -61,7 +61,25 @@ public static class Formato
         return p.Length > 0 ? p[^1].Trim() : c;
     }
 
+    /// <summary>Minutos legibles: "45 min", "1 h", "2 h 15 min".</summary>
+    public static string Duracion(double minutos)
+    {
+        var m = (int)Math.Ceiling(Math.Max(0, minutos));
+        if (m < 60) return $"{m} min";
+        var h = m / 60; var resto = m % 60;
+        return resto == 0 ? $"{h} h" : $"{h} h {resto} min";
+    }
+
     public static string NombreMes(int mes) => Capitalizar(Cultura.DateTimeFormat.GetMonthName(mes));
+
+    /// <summary>"2026-10" → "Oct 2026" (eje de los gráficos mensuales).</summary>
+    public static string Mes(string? periodo)
+    {
+        if (string.IsNullOrWhiteSpace(periodo) || periodo.Length < 7
+            || !int.TryParse(periodo[..4], out var a) || !int.TryParse(periodo[5..7], out var m) || m is < 1 or > 12)
+            return periodo ?? "";
+        return $"{Capitalizar(Cultura.DateTimeFormat.GetAbbreviatedMonthName(m).TrimEnd('.'))} {a}";
+    }
 
     public static string Capitalizar(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
 

@@ -1,8 +1,9 @@
 @inherits LayoutComponentBase
 @inject NavigationManager Nav
+@inject UiService Ui
 @implements IDisposable
 
-<MudThemeProvider Theme="@BancoTheme.Theme" />
+<MudThemeProvider Theme="@BancoTheme.Theme" IsDarkMode="_oscuro" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -17,6 +18,10 @@
             <span>Banco Santa Cruz · Sistemas</span>
         </div>
         <MudSpacer />
+        <MudTooltip Text="@(_oscuro ? "Cambiar a modo día" : "Cambiar a modo noche")">
+            <MudIconButton Icon="@(_oscuro ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)" Color="Color.Inherit"
+                           Class="ta-tema-btn mr-1" aria-label="@(_oscuro ? "Activar modo día" : "Activar modo noche")" OnClick="CambiarTema" />
+        </MudTooltip>
         <AlertasVencimiento />
         <span class="ta-reloj d-none d-sm-inline-flex">
             <MudIcon Icon="@Icons.Material.Filled.CalendarToday" Style="font-size:15px" />
@@ -74,6 +79,7 @@
 @code {
     private static readonly System.Globalization.CultureInfo Cultura = new("es-DO");
     private bool _drawerOpen = true;
+    private bool _oscuro;
     private DateTime _ahora = DateTime.Now;
     private Timer? _reloj;
 
@@ -82,6 +88,19 @@
         // El reloj del encabezado se refresca cada 30 s: suficiente para HH:mm.
         _reloj = new Timer(_ => InvokeAsync(() => { _ahora = DateTime.Now; StateHasChanged(); }), null,
                            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        // index.html ya aplicó el tema al CSS; aquí se sincroniza la paleta de MudBlazor.
+        if (await Ui.EsTemaOscuroAsync()) { _oscuro = true; StateHasChanged(); }
+    }
+
+    private async Task CambiarTema()
+    {
+        _oscuro = !_oscuro;
+        await Ui.AplicarTemaAsync(_oscuro);
     }
 
     private string RutaActual() => new Uri(Nav.Uri).AbsolutePath;

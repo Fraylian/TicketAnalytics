@@ -15,4 +15,6 @@ public interface IOrdenCambioDashboardService
     Task<ControlVencimientosDto> ControlVencimientosAsync(OrdenCambioFiltro f, CancellationToken ct = default);
     /// <summary>Analistas con OC en el alcance (para el selector de filtro).</summary>
     Task<IReadOnlyList<string>> AnalistasConOcAsync(OrdenCambioFiltro f, CancellationToken ct = default);
+    /// <summary>Vencimientos de OC y tickets pendientes de gestión agrupados por persona del grupo.</summary>
+    Task<AtencionPorPersonaDto> AtencionPorPersonaAsync(int anio, int mes, CancellationToken ct = default);
 }

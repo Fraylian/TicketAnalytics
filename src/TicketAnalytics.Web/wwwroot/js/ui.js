@@ -80,3 +80,18 @@ export function notificar(titulo, cuerpo, etiqueta) {
     n.onclick = () => { window.focus(); n.close(); };
     return true;
 }
+
+
+/** Tema actual según la clase de <html> (la pone index.html al cargar): "oscuro" | "claro". */
+export function temaActual() {
+    return document.documentElement.classList.contains("ta-oscuro") ? "oscuro" : "claro";
+}
+
+/** Aplica el tema con una transición corta y guarda la preferencia en el navegador. */
+export function aplicarTema(tema) {
+    const raiz = document.documentElement;
+    raiz.classList.add("ta-cambiando-tema");
+    raiz.classList.toggle("ta-oscuro", tema === "oscuro");
+    try { localStorage.setItem("ta-tema", tema); } catch (e) { /* sin almacenamiento: dura la sesión */ }
+    setTimeout(() => raiz.classList.remove("ta-cambiando-tema"), 320);
+}

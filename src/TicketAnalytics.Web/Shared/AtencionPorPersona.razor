@@ -1,0 +1,135 @@
+@* Vista "Atención por persona": una fila por analista del grupo con lo que necesita atención
+   (OC vencidas / que vencen hoy, esta semana o en el mes, y tickets con SLA vencido o sin gestión).
+   Todo se agrupa en el servidor (GET api/ordenes-cambio/atencion-por-persona).
+   Detalle a un clic: abre el panel del técnico con sus OC o sus tickets, paginado en el servidor. *@
+@inject TicketAnalyticsApi Api
+
+<div class="panel">
+    <div class="panel-cab">
+        <div>
+            <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.PriorityHigh" Size="Size.Small" Color="Color.Error" /> Atención por persona</h2>
+            <div class="panel-sub">@Subtitulo</div>
+        </div>
+        <MudTooltip Text="Actualizar">
+            <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" aria-label="Actualizar" OnClick="Cargar" Disabled="_cargando" />
+        </MudTooltip>
+    </div>
+
+    @if (_cargando && _datos is null)
+    {
+        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="180px" Animation="Animation.Wave" />
+    }
+    else if (_error is not null)
+    {
+        <ErrorState Mensaje="@_error" OnReintentar="Cargar" />
+    }
+    else if (_datos is null || !_datos.Personas.Any())
+    {
+        <EmptyState Icono="@Icons.Material.Filled.Groups" Mensaje="No hay analistas configurados en el grupo." />
+    }
+    else
+    {
+        <div class="ta-stagger">
+        @foreach (var p in _datos.Personas)
+        {
+            <div>
+                <MudPaper Class="@($"pa-3 mb-2 ta-hover-card {(_sel == p.Analista ? "ta-tecnico-activo" : "")}")" Elevation="0"
+                          Style="@($"border:1px solid var(--bsc-borde);border-left:4px solid {ColorNivel(p.Nivel)};border-radius:12px")">
+                    <div class="d-flex justify-space-between align-center flex-wrap gap-2">
+                        <div class="d-flex align-center gap-3" style="min-width:220px">
+                            <span class="ta-avatar sm" style="@($"background:{Formato.ColorAvatar(p.Analista)}")">@Formato.Iniciales(p.Analista)</span>
+                            <div>
+                                <MudText Typo="Typo.subtitle2">
+                                    @if (p.Nivel != "ok") { <span>⚠ </span> }<b>@p.Analista</b>
+                                </MudText>
+                                <MudText Typo="Typo.caption" Class="ta-muted">@Resumen(p)</MudText>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-1 flex-wrap align-center">
+                            @if (p.OcVencidas > 0) { <span class="ta-tag err">@p.OcVencidas OC vencidas</span> }
+                            @if (p.OcVencenHoy > 0) { <span class="ta-tag err">@p.OcVencenHoy OC vencen hoy</span> }
+                            @if (p.OcVencenSemana > 0) { <span class="ta-tag warn">@p.OcVencenSemana OC esta semana</span> }
+                            @if (p.OcVencenMes > 0) { <span class="ta-tag warn">@p.OcVencenMes OC en @_datos.Periodo</span> }
+                            @if (p.TicketsSlaVencido > 0) { <span class="ta-tag err">@p.TicketsSlaVencido tickets SLA vencido</span> }
+                            @if (p.TicketsSinGestion > 0) { <span class="ta-tag info">@p.TicketsSinGestion sin gestión</span> }
+                            @if (p.TicketsSinAvance > 0) { <span class="ta-tag info">@p.TicketsSinAvance sin avance @(_datos.DiasSinAvance)d</span> }
+                            @if (p.Nivel == "ok") { <span class="ta-tag ok">al día</span> }
+                            <MudButton Size="Size.Small" Variant="@(_sel == p.Analista && _verOc ? Variant.Filled : Variant.Text)" Color="Color.Primary"
+                                       Disabled="p.OcAbiertas == 0" OnClick="@(() => Ver(p.Analista, true))">OC (@p.OcAbiertas)</MudButton>
+                            <MudButton Size="Size.Small" Variant="@(_sel == p.Analista && !_verOc ? Variant.Filled : Variant.Text)" Color="Color.Primary"
+                                       Disabled="p.TicketsAbiertos == 0" OnClick="@(() => Ver(p.Analista, false))">Tickets (@p.TicketsAbiertos)</MudButton>
+                        </div>
+                    </div>
+                </MudPaper>
+                @if (_sel == p.Analista)
+                {
+                    <PanelTecnico @key="@($"{p.Analista}|{_verOc}")" Tecnico="@p.Analista" EsOrdenCambio="_verOc"
+                                  VistaInicial="@VistaInicial(p, _verOc)" Mes="Mes" Anio="Anio" OnCerrar="@(() => _sel = null)" />
+                }
+            </div>
+        }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int Anio { get; set; } = DateTime.Today.Year;
+    [Parameter] public int Mes { get; set; } = DateTime.Today.Month;
+
+    private AtencionPorPersonaDto? _datos;
+    private bool _cargando;
+    private string? _error;
+    private string? _sel;
+    private bool _verOc = true;
+    private (int, int)? _cargado;
+
+    private string Subtitulo => _datos is null
+        ? "Quién tiene OC o tickets que requieren atención"
+        : $"OC abiertas y tickets abiertos por analista · vencimientos de {_datos.Periodo} · {_datos.GeneradoEn:HH:mm}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_cargado == (Anio, Mes)) return;
+        _cargado = (Anio, Mes);
+        await Cargar();
+    }
+
+    private async Task Cargar()
+    {
+        _cargando = true;
+        _error = null;
+        try { _datos = await Api.AtencionPorPersonaAsync(Anio, Mes); }
+        catch (ApiException ex) { _error = ex.MensajeUsuario; }
+        catch (Exception) { _error = "No pudimos cargar la atención por persona."; }
+        finally { _cargando = false; }
+    }
+
+    private void Ver(string analista, bool oc)
+    {
+        if (_sel == analista && _verOc == oc) { _sel = null; return; }
+        _sel = analista;
+        _verOc = oc;
+    }
+
+    /// <summary>Abre el panel en lo más urgente de esa persona.</summary>
+    private static string VistaInicial(AtencionPersonaDto p, bool oc)
+        => oc ? (p.OcVencidas > 0 ? "vencidas" : p.OcVencenSemana > 0 ? "pronto" : p.OcVencenMes > 0 ? "mes" : "abiertas")
+              : (p.TicketsSlaVencido > 0 ? "vencidas" : "abiertas");
+
+    private static string Resumen(AtencionPersonaDto p)
+    {
+        // Los conteos se solapan (hoy ⊂ semana; semana y mes se cruzan): no se suman.
+        var partes = new List<string>();
+        if (p.OcVencenMes > 0) partes.Add($"{p.OcVencenMes} OC vencen en el mes");
+        partes.Add($"{p.OcAbiertas} OC abiertas");
+        partes.Add($"{p.TicketsAbiertos} tickets abiertos");
+        return string.Join(" · ", partes);
+    }
+
+    private static string ColorNivel(string nivel) => nivel switch
+    {
+        "critico" => "var(--op-vencido)",
+        "atencion" => "var(--op-riesgo)",
+        _ => "var(--op-cumplido)"
+    };
+}

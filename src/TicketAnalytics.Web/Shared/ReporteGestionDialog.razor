@@ -214,23 +214,42 @@
 
             <!-- ===== CLASIFICACIÓN (datos estructurados para medir) ===== -->
             <MudTabPanel Text="Clasificación" Icon="@Icons.Material.Filled.Category">
-                <MudSelect T="int" Value="_sistema" ValueChanged="OnSistemaChanged" Label="Sistema donde se presentó"
-                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
-                    @foreach (var s in _sistemas)
-                    {
-                        <MudSelectItem T="int" Value="@s.Valor">@s.Nombre</MudSelectItem>
-                    }
-                </MudSelect>
+                @* El sistema es el eje: al elegir proveedor se filtran sus sistemas; al elegir sistema el proveedor sale solo. *@
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="5">
+                        <MudSelect T="int?" Value="_proveedorFiltro" ValueChanged="OnProveedorFiltroChanged" Label="Proveedor"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                                   HelperText="Opcional: filtra los sistemas de ese proveedor">
+                            @foreach (var p in _proveedoresCat)
+                            {
+                                <MudSelectItem T="int?" Value="@((int?)p.Valor)">@p.Nombre</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="7">
+                        <MudSelect T="int" Value="_sistema" ValueChanged="OnSistemaChanged" Label="@(ClasificacionObligatoria ? "Sistema donde se presentó *" : "Sistema donde se presentó")"
+                                   Variant="Variant.Outlined" Margin="Margin.Dense"
+                                   Error="@(ClasificacionObligatoria && _sistema == 0)"
+                                   HelperText="@TextoProveedorSistema">
+                            <MudSelectItem T="int" Value="0">— Sin sistema —</MudSelectItem>
+                            @foreach (var s in SistemasFiltrados)
+                            {
+                                <MudSelectItem T="int" Value="@s.Valor">@s.Nombre@(s.Proveedor is null ? "" : $" · {s.Proveedor}")</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+                <div class="mb-3"></div>
 
-                <MudSelect T="int" Value="_tipoSolucion" ValueChanged="OnTipoSolucionChanged" Label="Tipo de solución"
-                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+                <MudSelect T="int" Value="_tipoSolucion" ValueChanged="OnTipoSolucionChanged" Label="@(ClasificacionObligatoria ? "Tipo de solución *" : "Tipo de solución")"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Error="@(ClasificacionObligatoria && _tipoSolucion == 0)">
                     @foreach (var t in _tiposSolucion)
                     {
                         <MudSelectItem T="int" Value="@t.Valor">@t.Nombre</MudSelectItem>
                     }
                 </MudSelect>
 
-                @* Caso especial: solo BSC en Línea + Actualización de datos *@
+                @* Caso especial: sistemas que exigen subtipo (BSC en Línea) + Actualización de datos *@
                 @if (AplicaTipoActualizacion)
                 {
                     <MudSelect T="int" @bind-Value="_tipoActualizacion" Label="Tipo de actualización de datos *"
@@ -242,6 +261,16 @@
                         }
                     </MudSelect>
                 }
+
+                <MudSelect T="int" @bind-Value="_tipoCorreccion" Label="Tipo de corrección" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
+                           HelperText="@(_tiposCorreccion.Any() ? "Catálogo propio, distinto del tipo de solución" : "Aún no hay tipos definidos: agrégalos en Proveedores · Tipos de corrección")"
+                           Disabled="@(!_tiposCorreccion.Any())">
+                    <MudSelectItem T="int" Value="0">— Sin tipo de corrección —</MudSelectItem>
+                    @foreach (var t in _tiposCorreccion)
+                    {
+                        <MudSelectItem T="int" Value="@t.Valor">@t.Nombre</MudSelectItem>
+                    }
+                </MudSelect>
 
                 <MudTextField @bind-Value="_areaDestino" Label="Área destino" Variant="Variant.Outlined"
                               Margin="Margin.Dense" Class="mb-3"
@@ -256,6 +285,26 @@
                 <MudTextField @bind-Value="_ticketCausaRaiz" Label="Ticket de causa raíz" Variant="Variant.Outlined"
                               Margin="Margin.Dense"
                               HelperText="Ticket asociado a la corrección definitiva" />
+
+                @* Contexto al clasificar: cómo se reparten hoy los casos por sistema y por solución. *@
+                @if (_distribucion is { TotalGestionados: > 0 })
+                {
+                    <MudDivider Class="my-3" />
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Cómo se distribuyen los casos</MudText>
+                    <MudText Typo="Typo.caption" Class="ta-tenue d-block mb-2">@_distribucion.TotalGestionados casos gestionados · para clasificar con criterio común</MudText>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption"><b>Por sistema</b></MudText>
+                            <BarList Items="@ItemsDistribucion(_distribucion.PorSistema, porSolucion: false)" MaxVisibles="5" Seleccionado="@_sistema.ToString()"
+                                     MensajeVacio="Sin casos con sistema." />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption"><b>Por tipo de solución</b></MudText>
+                            <BarList Items="@ItemsDistribucion(_distribucion.PorTipoSolucion, porSolucion: true)" MaxVisibles="5" Seleccionado="@_tipoSolucion.ToString()"
+                                     MensajeVacio="Sin casos con solución." />
+                        </MudItem>
+                    </MudGrid>
+                }
             </MudTabPanel>
 
             <!-- ===== REPORTE VP ===== -->
@@ -386,13 +435,31 @@
     private int _sistema;
     private int _tipoSolucion;
     private int _tipoActualizacion;
+    private int _tipoCorreccion;
+    private int? _proveedorFiltro;
     private string? _areaDestino;
     private string? _causaRaiz;
     private string? _ticketCausaRaiz;
 
-    private List<OpcionCatalogo> _sistemas = new();
+    private List<SistemaOpcion> _sistemas = new();
+    private List<OpcionCatalogo> _proveedoresCat = new();
     private List<OpcionCatalogo> _tiposSolucion = new();
     private List<OpcionCatalogo> _tiposActualizacion = new();
+    private List<OpcionCatalogo> _tiposCorreccion = new();
+    private IndicadoresGestionDto? _distribucion;
+
+    private SistemaOpcion? SistemaSel => _sistemas.FirstOrDefault(s => s.Valor == _sistema);
+
+    /// <summary>Sistemas del proveedor elegido (o todos si no hay filtro).</summary>
+    private IEnumerable<SistemaOpcion> SistemasFiltrados
+        => _proveedorFiltro is null ? _sistemas : _sistemas.Where(s => s.ProveedorId == _proveedorFiltro || s.Valor == _sistema);
+
+    private string TextoProveedorSistema => SistemaSel is null
+        ? "Elige el sistema; el proveedor responsable se completa solo"
+        : SistemaSel.Proveedor is null ? "Proveedor responsable: por asignar" : $"Proveedor responsable: {SistemaSel.Proveedor}";
+
+    /// <summary>Etapa Cerrado (12): para cerrar, el caso debe quedar clasificado (sistema y tipo de solución).</summary>
+    private bool ClasificacionObligatoria => _nuevaEtapa == 12;
 
     // ===== Reporte VP =====
     private bool _vaReporteVP;
@@ -417,8 +484,8 @@
     /// <summary>Solo se capturan datos de JIRA si el usuario dijo que tiene y no está bloqueado.</summary>
     private bool PuedeCapturarJira => JirasRegistrados.Any() ? _agregarOtroJira : _tieneJira;
 
-    /// <summary>Regla del punto 7: el subtipo solo aplica en BSC en Línea + Actualización de datos.</summary>
-    private bool AplicaTipoActualizacion => _sistema == 3 && _tipoSolucion == 1;
+    /// <summary>Regla del punto 7: el subtipo solo aplica si el sistema lo exige (catálogo) y la solución es Actualización de datos.</summary>
+    private bool AplicaTipoActualizacion => SistemaSel?.AplicaSubtipoActualizacion == true && _tipoSolucion == 1;
 
     protected override async Task OnInitializedAsync()
     {
@@ -435,11 +502,18 @@
 
         try
         {
-            var cat = await Api.CatalogosGestionAsync();
+            var tCat = Api.CatalogosGestionAsync();
+            var tVp = Api.ReporteVPCategoriasAsync();
+            var tDist = Api.IndicadoresGestionAsync(null, null);
+            await Task.WhenAll(tCat, tVp);
+            var cat = tCat.Result;
             _sistemas = cat.Sistemas;
+            _proveedoresCat = cat.Proveedores;
             _tiposSolucion = cat.TiposSolucion;
             _tiposActualizacion = cat.TiposActualizacion;
-            _categoriasVP = await Api.ReporteVPCategoriasAsync();
+            _tiposCorreccion = cat.TiposCorreccion;
+            _categoriasVP = tVp.Result;
+            try { _distribucion = await tDist; } catch { /* el gráfico es solo contexto */ }
         }
         catch
         {
@@ -457,6 +531,8 @@
                 _yaEstabaEnVP = seg.VaReporteVP;
                 _reportadoProveedor = seg.ReportadoProveedor;
                 _sistema = seg.Sistema;
+                _proveedorFiltro = seg.ProveedorSistemaId;
+                _tipoCorreccion = seg.TipoCorreccionId;
                 _tipoSolucion = seg.TipoSolucion;
                 _tipoActualizacion = seg.TipoActualizacionDatos;
                 _areaDestino = seg.AreaDestino;
@@ -489,9 +565,29 @@
     private void OnSistemaChanged(int v)
     {
         _sistema = v;
+        // El proveedor sale del sistema: se refleja en el filtro y, si aún no se eligió uno
+        // para el reporte, se propone en la pestaña Proveedor.
+        if (SistemaSel?.ProveedorId is int prov)
+        {
+            _proveedorFiltro = prov;
+            if (_proveedorId == 0 && Proveedores.Any(p => p.ProveedorId == prov)) _proveedorId = prov;
+        }
         if (!AplicaTipoActualizacion) _tipoActualizacion = 0;   // limpia el subtipo si ya no aplica
         StateHasChanged();
     }
+
+    private void OnProveedorFiltroChanged(int? v)
+    {
+        _proveedorFiltro = v;
+        // Si el sistema elegido no es de ese proveedor, se limpia para no guardar una combinación incoherente.
+        if (v is not null && SistemaSel is not null && SistemaSel.ProveedorId != v) _sistema = 0;
+        if (!AplicaTipoActualizacion) _tipoActualizacion = 0;
+        StateHasChanged();
+    }
+
+    private static List<BarList.Item> ItemsDistribucion(List<ConteoClasificacionDto> l, bool porSolucion)
+        => l.Select(x => new BarList.Item(x.Valor.ToString(), x.Nombre, x.Cantidad,
+                                          porSolucion ? SistemasSolucion.ColorSolucion(x.Valor) : x.Color)).ToList();
 
     private void OnTipoSolucionChanged(int v)
     {
@@ -594,6 +690,14 @@
         if (AplicaTipoActualizacion && _tipoActualizacion == 0)
             Snackbar.Add("Falta el tipo de actualización de datos; podrás completarlo luego.", Severity.Info);
 
+        // Cerrar exige clasificación: sin sistema ni solución el caso no cuenta en el dashboard.
+        if (ClasificacionObligatoria && (_sistema == 0 || _tipoSolucion == 0))
+        {
+            Snackbar.Add("Para cerrar el caso indica el sistema y el tipo de solución (pestaña Clasificación).", Severity.Warning);
+            _tab = 3;
+            return false;
+        }
+
         _guardando = true;
         try
         {
@@ -610,7 +714,8 @@
                 ProximosPasos = _proximosPasos,
 
                 // Clasificación estructurada
-                Sistema = _sistema > 0 ? _sistema : null,
+                Sistema = _sistema,                     // 0 = sin sistema
+                TipoCorreccionId = _tipoCorreccion,     // 0 = sin tipo de corrección
                 TipoSolucion = _tipoSolucion > 0 ? _tipoSolucion : null,
                 TipoActualizacionDatos = AplicaTipoActualizacion ? _tipoActualizacion : 0,
                 AreaDestino = _areaDestino,

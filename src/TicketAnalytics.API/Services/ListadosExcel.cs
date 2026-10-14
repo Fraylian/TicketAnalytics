@@ -129,7 +129,8 @@ public static class ListadosExcel
         using var wb = new XLWorkbook();
         var ws = Hoja(wb, "Diario TI", "DIARIO DE ACTIVIDADES TI", contexto, actividades.Count);
 
-        string[] cab = { "Fecha", "Técnico", "Actividad", "Tipo", "No. Solicitud", "Enlace MDB", "Proyecto", "Horas", "Estado", "Comentario" };
+        string[] cab = { "Fecha", "Técnico", "Actividad", "Tipo", "No. Solicitud", "Enlace MDB", "Proyecto", "Horas", "Estado",
+                         "Sistema", "Proveedor", "Tipo de solución", "Comentario" };
         var fila = Encabezado(ws, cab);
         var primeraFila = fila;
 
@@ -147,6 +148,9 @@ public static class ListadosExcel
             ws.Cell(fila, c).Value = a.Horas;
             ws.Cell(fila, c++).Style.NumberFormat.Format = "0.00";
             ws.Cell(fila, c++).Value = a.EstadoTexto;
+            ws.Cell(fila, c++).Value = a.Sistema;
+            ws.Cell(fila, c++).Value = a.Proveedor;
+            ws.Cell(fila, c++).Value = a.TipoSolucionTexto;
             ws.Cell(fila, c++).Value = Recortar(a.Comentario);
             fila++;
         }

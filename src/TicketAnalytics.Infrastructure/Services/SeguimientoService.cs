@@ -41,6 +41,8 @@ public class SeguimientoService : ISeguimientoService
             .Include(x => x.Actualizaciones).Include(x => x.Jiras)
             .Include(x => x.ReportesProveedor).ThenInclude(r => r.Proveedor)
             .Include(x => x.Evidencias)
+            .Include(x => x.Sistema).ThenInclude(si => si!.Proveedor)
+            .Include(x => x.TipoCorreccion)
             .FirstOrDefaultAsync(x => x.RefNum == refNum, ct);
         return s is null ? null : Map(s);
     }
@@ -196,6 +198,11 @@ public class SeguimientoService : ISeguimientoService
             .Select(s => new
             {
                 Seg = s,
+                // Clasificación: nombres proyectados (no se cargan las entidades del catálogo)
+                SistemaNombre = s.Sistema != null ? s.Sistema.Nombre : null,
+                ProveedorSistemaId = s.Sistema != null ? s.Sistema.ProveedorId : null,
+                ProveedorSistema = s.Sistema != null && s.Sistema.Proveedor != null ? s.Sistema.Proveedor.Nombre : null,
+                Correccion = s.TipoCorreccion != null ? s.TipoCorreccion.Nombre : null,
                 Actualizaciones = s.Actualizaciones.Count,
                 Jiras = s.Jiras.Count,
                 Reportes = s.ReportesProveedor.Count,
@@ -206,6 +213,10 @@ public class SeguimientoService : ISeguimientoService
         var items = page.Select(x =>
         {
             var dto = Map(x.Seg);
+            dto.SistemaTexto = x.SistemaNombre ?? "";
+            dto.ProveedorSistemaId = x.ProveedorSistemaId;
+            dto.ProveedorSistema = x.ProveedorSistema;
+            dto.TipoCorreccionTexto = x.Correccion ?? "";
             dto.CantidadActualizaciones = x.Actualizaciones;
             dto.CantidadJiras = x.Jiras;
             dto.CantidadReportesProveedor = x.Reportes;
@@ -276,8 +287,12 @@ public class SeguimientoService : ISeguimientoService
         ReportadoProveedor = (int)s.ReportadoProveedor,
         FechaReporteProveedor = s.FechaReporteProveedor,
         TicketProveedor = s.TicketProveedor,
-        Sistema = (int)s.Sistema,
-        SistemaTexto = SistemaAfectadoInfo.Nombre(s.Sistema),
+        Sistema = s.SistemaId ?? 0,
+        SistemaTexto = s.Sistema?.Nombre ?? "",
+        ProveedorSistemaId = s.Sistema?.ProveedorId,
+        ProveedorSistema = s.Sistema?.Proveedor?.Nombre,
+        TipoCorreccionId = s.TipoCorreccionId ?? 0,
+        TipoCorreccionTexto = s.TipoCorreccion?.Nombre ?? "",
         TipoSolucion = (int)s.TipoSolucion,
         TipoSolucionTexto = TipoSolucionInfo.Nombre(s.TipoSolucion),
         TipoActualizacionDatos = (int)s.TipoActualizacionDatos,

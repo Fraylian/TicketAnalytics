@@ -79,14 +79,32 @@ public class GestionCasoService : IGestionCasoService
             if (req.ProximoSeguimiento.HasValue) seg.ProximoSeguimiento = req.ProximoSeguimiento;
 
             // --- Datos estructurados de la gestión ---
-            if (req.Sistema.HasValue && Enum.IsDefined(typeof(SistemaAfectado), req.Sistema.Value))
-                seg.Sistema = (SistemaAfectado)req.Sistema.Value;
+            // Sistema: catálogo local. 0 = quitar; un id inexistente o inactivo se rechaza.
+            if (req.Sistema.HasValue)
+            {
+                if (req.Sistema.Value <= 0) seg.SistemaId = null;
+                else if (await _db.Sistemas.AnyAsync(x => x.SistemaId == req.Sistema.Value && x.Activo, ct))
+                    seg.SistemaId = req.Sistema.Value;
+                else
+                    throw new ArgumentException("El sistema elegido no existe o está inactivo.");
+            }
+            if (req.TipoCorreccionId.HasValue)
+            {
+                if (req.TipoCorreccionId.Value <= 0) seg.TipoCorreccionId = null;
+                else if (await _db.TiposCorreccion.AnyAsync(x => x.TipoCorreccionId == req.TipoCorreccionId.Value && x.Activo, ct))
+                    seg.TipoCorreccionId = req.TipoCorreccionId.Value;
+                else
+                    throw new ArgumentException("El tipo de corrección elegido no existe o está inactivo.");
+            }
             if (req.TipoSolucion.HasValue && Enum.IsDefined(typeof(TipoSolucion), req.TipoSolucion.Value))
                 seg.TipoSolucion = (TipoSolucion)req.TipoSolucion.Value;
 
-            // Regla del punto 7: el subtipo SOLO se guarda en la combinación válida;
-            // en cualquier otro caso se fuerza a NoAplica para no dejar datos huérfanos.
-            if (TipoActualizacionDatosInfo.Aplica(seg.Sistema, seg.TipoSolucion)
+            // Regla del punto 7: el subtipo SOLO se guarda cuando el sistema lo exige (catálogo:
+            // AplicaSubtipoActualizacion, hoy BSC en Línea) y la solución es Actualización de datos.
+            // En cualquier otro caso se fuerza a NoAplica para no dejar datos huérfanos.
+            var sistemaAplicaSubtipo = seg.SistemaId.HasValue
+                && await _db.Sistemas.AnyAsync(x => x.SistemaId == seg.SistemaId && x.AplicaSubtipoActualizacion, ct);
+            if (TipoActualizacionDatosInfo.Aplica(sistemaAplicaSubtipo, seg.TipoSolucion)
                 && req.TipoActualizacionDatos.HasValue
                 && Enum.IsDefined(typeof(TipoActualizacionDatos), req.TipoActualizacionDatos.Value))
                 seg.TipoActualizacionDatos = (TipoActualizacionDatos)req.TipoActualizacionDatos.Value;
@@ -101,6 +119,12 @@ public class GestionCasoService : IGestionCasoService
 
             if (req.NuevaEtapa.HasValue && Enum.IsDefined(typeof(EtapaSeguimiento), req.NuevaEtapa.Value))
                 seg.EtapaActual = (EtapaSeguimiento)req.NuevaEtapa.Value;
+
+            // Cerrar exige clasificación: sin sistema ni tipo de solución el caso no aparece en
+            // el dashboard de sistemas. Solo se valida al PASAR a Cerrado, no en gestiones posteriores.
+            if (seg.EtapaActual == EtapaSeguimiento.Cerrado && etapaAnterior != EtapaSeguimiento.Cerrado
+                && (seg.SistemaId is null || seg.TipoSolucion == TipoSolucion.NoEspecificado))
+                throw new ArgumentException("Para cerrar el caso indica el sistema y el tipo de solución.");
 
             // 2) Estado de reporte a proveedor (Sí / No / Pendiente)
             seg.ReportadoProveedor = (EstadoReporteProveedorTicket)req.ReportadoProveedor;

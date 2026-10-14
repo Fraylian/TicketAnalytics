@@ -30,6 +30,10 @@ public static class AnalyticsDbInitializer
         await ctx.Database.ExecuteSqlRawAsync(EsquemaFaltanteSql, ct);
         logger.LogInformation("Esquema verificado: tablas/columnas faltantes agregadas si aplicaba.");
         await SeedCategoriasSiVaciaAsync(ctx, logger, ct);
+        await ctx.Database.ExecuteSqlRawAsync(SeedParametrosSql, ct);
+        await ctx.Database.ExecuteSqlRawAsync(SistemasSql, ct);
+        logger.LogInformation("Catálogo de sistemas verificado.");
+        logger.LogInformation("Parámetros de negocio y grupo de analistas verificados.");
 
         var cats = await ctx.CategoriasAlcance.CountAsync(ct);
         logger.LogInformation("CategoriaAlcance tiene {N} categorias en alcance.", cats);
@@ -170,6 +174,38 @@ WHEN NOT MATCHED THEN
     INSERT (Nombre, Activo, SlaCriticoHoras, SlaAltoHoras, SlaMedioHoras, SlaBajoHoras)
     VALUES (s.Nombre, 1, s.Critico, s.Alto, s.Medio, s.Bajo);
 
+-- ============ Catálogo de sistemas (eje de clasificación) y tipos de corrección ============
+-- El sistema reemplaza al antiguo enum SistemaAfectado. Cada sistema pertenece a UN
+-- proveedor (N:1); ProveedorId NULL = por asignar o interno.
+IF OBJECT_ID('dbo.Sistema','U') IS NULL
+CREATE TABLE dbo.Sistema (
+    SistemaId   INT IDENTITY(1,1) PRIMARY KEY,
+    Nombre      NVARCHAR(120) NOT NULL,
+    Descripcion NVARCHAR(400) NULL,
+    ProveedorId INT           NULL,
+    Criticidad  INT           NOT NULL CONSTRAINT DF_Sistema_Criticidad DEFAULT 0,
+    Activo      BIT           NOT NULL CONSTRAINT DF_Sistema_Activo DEFAULT 1,
+    Orden       INT           NOT NULL CONSTRAINT DF_Sistema_Orden DEFAULT 0,
+    Color       NVARCHAR(20)  NULL,
+    AplicaSubtipoActualizacion BIT NOT NULL CONSTRAINT DF_Sistema_AplicaSubtipo DEFAULT 0,
+    CONSTRAINT FK_Sistema_Proveedor FOREIGN KEY (ProveedorId) REFERENCES dbo.Proveedor(ProveedorId)
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_Sistema_Nombre')
+CREATE UNIQUE INDEX IX_Sistema_Nombre ON dbo.Sistema(Nombre);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_Sistema_ProveedorId')
+CREATE INDEX IX_Sistema_ProveedorId ON dbo.Sistema(ProveedorId);
+
+IF OBJECT_ID('dbo.TipoCorreccion','U') IS NULL
+CREATE TABLE dbo.TipoCorreccion (
+    TipoCorreccionId INT IDENTITY(1,1) PRIMARY KEY,
+    Nombre           NVARCHAR(120) NOT NULL,
+    Descripcion      NVARCHAR(400) NULL,
+    Activo           BIT           NOT NULL CONSTRAINT DF_TipoCorreccion_Activo DEFAULT 1,
+    Orden            INT           NOT NULL CONSTRAINT DF_TipoCorreccion_Orden DEFAULT 0
+);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_TipoCorreccion_Nombre')
+CREATE UNIQUE INDEX IX_TipoCorreccion_Nombre ON dbo.TipoCorreccion(Nombre);
+
 IF OBJECT_ID('dbo.TicketSeguimiento','U') IS NULL
 CREATE TABLE dbo.TicketSeguimiento (
     SeguimientoId      BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -235,8 +271,6 @@ IF COL_LENGTH('dbo.TicketSeguimiento','NotaReporteVP') IS NULL
     ALTER TABLE dbo.TicketSeguimiento ADD NotaReporteVP NVARCHAR(2000) NULL;
 
 -- Datos estructurados de la gestión (Sistema, Tipo Solución, causa raíz, etc.)
-IF COL_LENGTH('dbo.TicketSeguimiento','Sistema') IS NULL
-    ALTER TABLE dbo.TicketSeguimiento ADD Sistema INT NOT NULL CONSTRAINT DF_TS_Sistema DEFAULT 0;
 IF COL_LENGTH('dbo.TicketSeguimiento','TipoSolucion') IS NULL
     ALTER TABLE dbo.TicketSeguimiento ADD TipoSolucion INT NOT NULL CONSTRAINT DF_TS_TipoSolucion DEFAULT 0;
 IF COL_LENGTH('dbo.TicketSeguimiento','TipoActualizacionDatos') IS NULL
@@ -251,6 +285,21 @@ IF COL_LENGTH('dbo.TicketSeguimiento','CausaRaiz') IS NULL
     ALTER TABLE dbo.TicketSeguimiento ADD CausaRaiz NVARCHAR(1000) NULL;
 IF COL_LENGTH('dbo.TicketSeguimiento','TicketCausaRaiz') IS NULL
     ALTER TABLE dbo.TicketSeguimiento ADD TicketCausaRaiz NVARCHAR(40) NULL;
+IF COL_LENGTH('dbo.TicketSeguimiento','SistemaId') IS NULL
+    ALTER TABLE dbo.TicketSeguimiento ADD SistemaId INT NULL;
+IF COL_LENGTH('dbo.TicketSeguimiento','TipoCorreccionId') IS NULL
+    ALTER TABLE dbo.TicketSeguimiento ADD TipoCorreccionId INT NULL;
+
+-- FK e índice de las columnas nuevas (en EXEC: se compilan después de agregarlas)
+EXEC('
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_key_columns fkc WHERE fkc.parent_object_id = OBJECT_ID(''dbo.TicketSeguimiento'') AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = ''SistemaId'')
+    ALTER TABLE dbo.TicketSeguimiento ADD CONSTRAINT FK_TicketSeguimiento_Sistema
+        FOREIGN KEY (SistemaId) REFERENCES dbo.Sistema(SistemaId);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_key_columns fkc WHERE fkc.parent_object_id = OBJECT_ID(''dbo.TicketSeguimiento'') AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = ''TipoCorreccionId'')
+    ALTER TABLE dbo.TicketSeguimiento ADD CONSTRAINT FK_TicketSeguimiento_TipoCorreccion
+        FOREIGN KEY (TipoCorreccionId) REFERENCES dbo.TipoCorreccion(TipoCorreccionId);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=''IX_TicketSeguimiento_SistemaId'')
+    CREATE INDEX IX_TicketSeguimiento_SistemaId ON dbo.TicketSeguimiento(SistemaId);');
 
 -- ============================================================================
 -- Reparacion de columnas enteras del seguimiento.
@@ -264,7 +313,6 @@ DECLARE cur CURSOR LOCAL FAST_FORWARD FOR
     SELECT * FROM (VALUES
         (''ReportadoProveedor'', 2),
         (''EstadoReporteVP'', 0),
-        (''Sistema'', 0),
         (''TipoSolucion'', 0),
         (''TipoActualizacionDatos'', 0)
     ) AS t(c, d);
@@ -308,9 +356,6 @@ BEGIN
 END');
 
 -- Índices para agrupaciones del dashboard
-EXEC('
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=''IX_TicketSeguimiento_Sistema'')
-CREATE INDEX IX_TicketSeguimiento_Sistema ON dbo.TicketSeguimiento(Sistema)');
 EXEC('
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=''IX_TicketSeguimiento_TipoSolucion'')
 CREATE INDEX IX_TicketSeguimiento_TipoSolucion ON dbo.TicketSeguimiento(TipoSolucion)');
@@ -548,5 +593,142 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_ActividadDiaria_TecnicoI
 CREATE INDEX IX_ActividadDiaria_TecnicoId ON dbo.ActividadDiaria(TecnicoId);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_ActividadDiaria_RefNumVinculado')
 CREATE INDEX IX_ActividadDiaria_RefNumVinculado ON dbo.ActividadDiaria(RefNumVinculado);
+
+-- Clasificación de la actividad en conjunto con la gestión: sistema → proveedor → solución
+IF COL_LENGTH('dbo.ActividadDiaria','SistemaId') IS NULL
+    ALTER TABLE dbo.ActividadDiaria ADD SistemaId INT NULL;
+IF COL_LENGTH('dbo.ActividadDiaria','ProveedorId') IS NULL
+    ALTER TABLE dbo.ActividadDiaria ADD ProveedorId INT NULL;
+IF COL_LENGTH('dbo.ActividadDiaria','TipoSolucion') IS NULL
+    ALTER TABLE dbo.ActividadDiaria ADD TipoSolucion INT NOT NULL CONSTRAINT DF_AD_TipoSolucion DEFAULT 0;
+EXEC('
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_key_columns fkc WHERE fkc.parent_object_id = OBJECT_ID(''dbo.ActividadDiaria'') AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = ''SistemaId'')
+    ALTER TABLE dbo.ActividadDiaria ADD CONSTRAINT FK_ActividadDiaria_Sistema
+        FOREIGN KEY (SistemaId) REFERENCES dbo.Sistema(SistemaId);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_key_columns fkc WHERE fkc.parent_object_id = OBJECT_ID(''dbo.ActividadDiaria'') AND COL_NAME(fkc.parent_object_id, fkc.parent_column_id) = ''ProveedorId'')
+    ALTER TABLE dbo.ActividadDiaria ADD CONSTRAINT FK_ActividadDiaria_Proveedor
+        FOREIGN KEY (ProveedorId) REFERENCES dbo.Proveedor(ProveedorId);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=''IX_ActividadDiaria_SistemaId'')
+    CREATE INDEX IX_ActividadDiaria_SistemaId ON dbo.ActividadDiaria(SistemaId);');
+
+-- ============ Parámetros de negocio (antes quemados en el código) ============
+IF OBJECT_ID('dbo.ParametroSistema','U') IS NULL
+CREATE TABLE dbo.ParametroSistema (
+    Clave          NVARCHAR(80)  NOT NULL PRIMARY KEY,
+    Valor          NVARCHAR(200) NOT NULL,
+    Descripcion    NVARCHAR(400) NULL,
+    ActualizadoEn  DATETIME2     NOT NULL,
+    ActualizadoPor NVARCHAR(100) NULL
+);
+
+-- ============ Grupo de analistas del área (antes lista fija en GrupoAnalistas.cs) ============
+IF OBJECT_ID('dbo.AnalistaGrupo','U') IS NULL
+CREATE TABLE dbo.AnalistaGrupo (
+    UserId   NVARCHAR(60) NOT NULL PRIMARY KEY,
+    Activo   BIT          NOT NULL,
+    Orden    INT          NOT NULL,
+    CreadoEn DATETIME2    NOT NULL
+);
+";
+
+    /// <summary>
+    /// Semilla del catálogo de sistemas (solo inserta los que falten por nombre, para respetar
+    /// lo que se edite desde la administración) y migración única desde el antiguo enum:
+    /// si la columna entera TicketSeguimiento.Sistema todavía existe, sus valores (data de
+    /// prueba) se pasan a SistemaId por nombre y la columna se elimina.
+    /// Proveedores: solo EIKON está confirmado; el resto queda "por asignar" (NULL). No se
+    /// inventan proveedores: Datawarehouse es interno de TI y no tiene proveedor externo.
+    /// </summary>
+    private const string SistemasSql = @"
+MERGE dbo.Sistema AS d
+USING (VALUES
+    (N'BSC en Línea',             N'Banca en línea',                       10, '#15528E', 1, CAST(NULL AS NVARCHAR(120))),
+    (N'ITC',                      NULL,                                    20, '#00897B', 0, NULL),
+    (N'Extreme',                  NULL,                                    30, '#6B4EFF', 0, NULL),
+    (N'Datawarehouse',            N'Interno — TI (sin proveedor externo)', 40, '#455A64', 0, NULL),
+    (N'App Móvil',                NULL,                                    50, '#0288D1', 0, NULL),
+    (N'Core Bancario',            NULL,                                    60, '#C75100', 0, NULL),
+    (N'Cajeros / ATM',            NULL,                                    70, '#2E7D32', 0, NULL),
+    (N'EIKON (Nómina / RRHH)',    N'Nómina y recursos humanos',            80, '#AD1457', 0, N'EIKON'),
+    (N'Tarjetas de Crédito',      NULL,                                    90, '#F9A825', 0, NULL),
+    (N'Canales / Medios de Pago', NULL,                                   100, '#5D4037', 0, NULL),
+    (N'Otros',                    NULL,                                   990, '#7B1FA2', 0, NULL)
+) AS s (Nombre, Descripcion, Orden, Color, AplicaSubtipo, Proveedor)
+ON d.Nombre = s.Nombre
+WHEN NOT MATCHED THEN
+    INSERT (Nombre, Descripcion, ProveedorId, Criticidad, Activo, Orden, Color, AplicaSubtipoActualizacion)
+    VALUES (s.Nombre, s.Descripcion,
+            (SELECT p.ProveedorId FROM dbo.Proveedor p WHERE p.Nombre = s.Proveedor),
+            0, 1, s.Orden, s.Color, s.AplicaSubtipo);
+
+-- Migración única desde el enum (la columna vieja era INT con los valores del enum).
+IF COL_LENGTH('dbo.TicketSeguimiento','Sistema') IS NOT NULL
+BEGIN
+    EXEC('
+    UPDATE ts SET ts.SistemaId = si.SistemaId
+      FROM dbo.TicketSeguimiento ts
+      JOIN dbo.Sistema si ON si.Nombre = CASE ts.Sistema
+            WHEN 1 THEN N''Extreme''       WHEN 2 THEN N''Datawarehouse''
+            WHEN 3 THEN N''BSC en Línea''  WHEN 4 THEN N''ITC''
+            WHEN 5 THEN N''App Móvil''     WHEN 6 THEN N''Core Bancario''
+            WHEN 7 THEN N''Cajeros / ATM'' WHEN 99 THEN N''Otros'' END
+     WHERE ts.SistemaId IS NULL;');
+
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name='IX_TicketSeguimiento_Sistema' AND object_id = OBJECT_ID('dbo.TicketSeguimiento'))
+        DROP INDEX IX_TicketSeguimiento_Sistema ON dbo.TicketSeguimiento;
+
+    DECLARE @dfSis SYSNAME;
+    SELECT @dfSis = dc.name FROM sys.default_constraints dc
+      JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+     WHERE dc.parent_object_id = OBJECT_ID('dbo.TicketSeguimiento') AND c.name = 'Sistema';
+    IF @dfSis IS NOT NULL EXEC('ALTER TABLE dbo.TicketSeguimiento DROP CONSTRAINT [' + @dfSis + ']');
+
+    ALTER TABLE dbo.TicketSeguimiento DROP COLUMN Sistema;
+END
+";
+
+    /// <summary>
+    /// Semilla idempotente: inserta SOLO las claves que falten (los valores que el usuario ya
+    /// cambió se respetan). El grupo de analistas se siembra solo si la tabla está vacía, para
+    /// que una baja hecha desde la administración no vuelva a aparecer en el próximo arranque.
+    /// Los valores son los que antes estaban quemados en el código.
+    /// </summary>
+    private const string SeedParametrosSql = @"
+DECLARE @p TABLE (Clave NVARCHAR(80), Valor NVARCHAR(200), Descripcion NVARCHAR(400));
+INSERT @p VALUES
+ ('General.FechaBase',              '2026-01-01', N'Inicio del histórico analizado (yyyy-MM-dd). Ninguna consulta a MDB va antes de esta fecha.'),
+ ('OC.DiasComplejidad.Alta',        '90',  N'Días hasta el vencimiento de una OC de complejidad Alta, contados desde su apertura.'),
+ ('OC.DiasComplejidad.Media',       '60',  N'Días hasta el vencimiento de una OC de complejidad Media.'),
+ ('OC.DiasComplejidad.Baja',        '30',  N'Días hasta el vencimiento de una OC de complejidad Baja.'),
+ ('OC.DiasComplejidad.SinAsignar',  '60',  N'Días hasta el vencimiento de una OC sin complejidad asignada.'),
+ ('OC.DiasVencePronto',             '7',   N'Una OC abierta ""vence pronto"" si le quedan estos días o menos.'),
+ ('OC.DiasMargenVentana',           '10',  N'Días extra (además del mayor plazo por complejidad) que se miran hacia atrás desde la fecha pedida, para no perder OC abiertas antes que vencen en el período.'),
+ ('Ticket.DiasVencePronto',         '2',   N'Un ticket abierto ""vence pronto"" si a su SLA le quedan estos días o menos.'),
+ ('Ticket.PctRiesgoSla',            '80',  N'Porcentaje de SLA consumido a partir del cual un ticket abierto se considera próximo a vencer.'),
+ ('Alertas.MinutosAntelacion',      '60',  N'Umbral urgente (minutos): faltando esto o menos para que venza el SLA, la alerta pasa a urgente.'),
+ ('Alertas.MinutosAvisoTemprano',   '240', N'Aviso temprano (minutos): desde cuánto antes del vencimiento del SLA empiezan a avisarse los tickets.'),
+ ('Seguimiento.DiasSinAvance',      '7',   N'Días sin actualización a partir de los cuales un caso se considera sin avance reciente.'),
+ ('Cache.CatalogosMinutos',         '30',  N'Minutos que se conservan en memoria los catálogos de MDB (categorías, estados, contactos).'),
+ ('Consultas.UmbralLentaMs',        '1000',N'Toda consulta que tarde más que esto (ms) queda registrada en el log con sus parámetros.');
+
+INSERT INTO dbo.ParametroSistema (Clave, Valor, Descripcion, ActualizadoEn, ActualizadoPor)
+SELECT p.Clave, p.Valor, p.Descripcion, SYSUTCDATETIME(), 'semilla'
+FROM @p p
+WHERE NOT EXISTS (SELECT 1 FROM dbo.ParametroSistema x WHERE x.Clave = p.Clave);
+
+-- Alertas.MinutosAntelacion cambió de significado (ahora es el umbral urgente): solo se
+-- actualiza su descripción; el valor que el usuario haya configurado se respeta.
+UPDATE x SET x.Descripcion = p.Descripcion
+FROM dbo.ParametroSistema x JOIN @p p ON p.Clave = x.Clave
+WHERE x.Clave = 'Alertas.MinutosAntelacion' AND ISNULL(x.Descripcion, '') <> p.Descripcion;
+
+IF NOT EXISTS (SELECT 1 FROM dbo.AnalistaGrupo)
+INSERT INTO dbo.AnalistaGrupo (UserId, Activo, Orden, CreadoEn) VALUES
+ ('jalvarado', 1, 1, SYSUTCDATETIME()),
+ ('rceballos', 1, 2, SYSUTCDATETIME()),
+ ('fsoto',     1, 3, SYSUTCDATETIME()),
+ ('nimelo',    1, 4, SYSUTCDATETIME()),
+ ('mpozo',     1, 5, SYSUTCDATETIME()),
+ ('yasoto',    1, 6, SYSUTCDATETIME());
 ";
 }

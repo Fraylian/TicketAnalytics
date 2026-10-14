@@ -67,14 +67,20 @@ public class TicketSeguimiento
 
     // ===== Datos estructurados de la gestión (puntos 5, 6, 7 del requerimiento) =====
 
-    /// <summary>Sistema donde se presentó el incidente. Estructurado para medir por sistema.</summary>
-    public SistemaAfectado Sistema { get; set; } = SistemaAfectado.NoEspecificado;
+    /// <summary>Sistema donde se presentó el caso (catálogo local). Es el eje principal de
+    /// clasificación; el proveedor responsable sale del sistema.</summary>
+    public int? SistemaId { get; set; }
+    public Sistema? Sistema { get; set; }
+
+    /// <summary>Tipo de corrección (catálogo local, distinto del tipo de solución).</summary>
+    public int? TipoCorreccionId { get; set; }
+    public TipoCorreccion? TipoCorreccion { get; set; }
 
     /// <summary>Clasificación de la solución aplicada. Estructurado para reportería.</summary>
     public TipoSolucion TipoSolucion { get; set; } = TipoSolucion.NoEspecificado;
 
-    /// <summary>Subtipo de actualización de datos. Solo aplica si Sistema = BSC en Línea
-    /// y TipoSolución = Actualización de datos.</summary>
+    /// <summary>Subtipo de actualización de datos. Solo aplica si el sistema lo exige
+    /// (Sistema.AplicaSubtipoActualizacion) y TipoSolución = Actualización de datos.</summary>
     public TipoActualizacionDatos TipoActualizacionDatos { get; set; } = TipoActualizacionDatos.NoAplica;
 
     /// <summary>Fecha en que el caso fue escalado al proveedor.</summary>

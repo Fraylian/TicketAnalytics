@@ -4,7 +4,8 @@ namespace TicketAnalytics.Application.Tickets.DTOs;
 /// Las fechas se convierten a epoch RD internamente (filtro sargable).</summary>
 public class TicketFiltro
 {
-    public DateTime? FechaDesde { get; set; } = new DateTime(2026, 1, 1);
+    /// <summary>Sin valor: el servidor aplica la fecha base configurada (General.FechaBase).</summary>
+    public DateTime? FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
     public string? TipoCaso { get; set; }
     public List<string>? Categorias { get; set; }
@@ -37,7 +38,7 @@ public class TicketFiltro
     public int? ReportadoProveedor { get; set; }
     /// <summary>Atajo: solo casos con reporte a proveedor en No o Pendiente (requieren escalamiento).</summary>
     public bool? PendienteEscalarProveedor { get; set; }
-    public int? Sistema { get; set; }                      // SistemaAfectado
+    public int? Sistema { get; set; }                      // SistemaId del catálogo local
     public int? TipoSolucion { get; set; }                 // TipoSolucion
     public int? TipoActualizacionDatos { get; set; }       // TipoActualizacionDatos
     public bool? ConCausaRaiz { get; set; }

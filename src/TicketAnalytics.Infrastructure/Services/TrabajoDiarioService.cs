@@ -105,7 +105,8 @@ public class TrabajoDiarioService : ITrabajoDiarioService
     /// <summary>Filtros comunes a la búsqueda paginada y a la exportación completa.</summary>
     private IQueryable<ActividadDiaria> FiltrarActividades(ActividadFiltro f)
     {
-        var q = _db.ActividadesDiarias.AsNoTracking().Include(a => a.Tecnico).AsQueryable();
+        var q = _db.ActividadesDiarias.AsNoTracking()
+            .Include(a => a.Tecnico).Include(a => a.Sistema).Include(a => a.Proveedor).AsQueryable();
 
         if (f.FechaDesde.HasValue) q = q.Where(a => a.Fecha >= f.FechaDesde.Value);
         if (f.FechaHasta.HasValue) q = q.Where(a => a.Fecha < f.FechaHasta.Value.AddDays(1));
@@ -114,6 +115,8 @@ public class TrabajoDiarioService : ITrabajoDiarioService
         if (f.Estado.HasValue) q = q.Where(a => (int)a.Estado == f.Estado.Value);
         if (!string.IsNullOrWhiteSpace(f.Proyecto)) q = q.Where(a => a.Proyecto != null && a.Proyecto.Contains(f.Proyecto));
         if (!string.IsNullOrWhiteSpace(f.NoSolicitud)) q = q.Where(a => a.NoSolicitud != null && a.NoSolicitud.Contains(f.NoSolicitud));
+        if (f.SistemaId is > 0) q = q.Where(a => a.SistemaId == f.SistemaId);
+        if (f.ProveedorId is > 0) q = q.Where(a => a.ProveedorId == f.ProveedorId);
         if (!string.IsNullOrWhiteSpace(f.Texto))
         {
             var t = f.Texto.Trim();
@@ -146,6 +149,26 @@ public class TrabajoDiarioService : ITrabajoDiarioService
         if (req.TecnicoId <= 0 || !await _db.Tecnicos.AnyAsync(t => t.TecnicoId == req.TecnicoId, ct))
             throw new InvalidOperationException("Debe seleccionar un técnico válido.");
 
+        // Clasificación en conjunto: el proveedor sale del sistema cuando el sistema lo tiene;
+        // si no (por asignar / interno), se respeta el proveedor elegido a mano.
+        int? sistemaId = null, proveedorId = null;
+        if (req.SistemaId is > 0)
+        {
+            var sis = await _db.Sistemas.AsNoTracking().Where(x => x.SistemaId == req.SistemaId)
+                .Select(x => new { x.SistemaId, x.ProveedorId }).FirstOrDefaultAsync(ct)
+                ?? throw new InvalidOperationException("El sistema elegido no existe.");
+            sistemaId = sis.SistemaId;
+            proveedorId = sis.ProveedorId;
+        }
+        if (proveedorId is null && req.ProveedorId is > 0)
+        {
+            if (!await _db.Proveedores.AnyAsync(p => p.ProveedorId == req.ProveedorId, ct))
+                throw new InvalidOperationException("El proveedor elegido no existe.");
+            proveedorId = req.ProveedorId;
+        }
+        var tipoSolucion = req.TipoSolucion is { } ts && Enum.IsDefined(typeof(TipoSolucion), ts)
+            ? (TipoSolucion)ts : TipoSolucion.NoEspecificado;
+
         ActividadDiaria a;
         if (req.ActividadId.HasValue)
         {
@@ -171,9 +194,14 @@ public class TrabajoDiarioService : ITrabajoDiarioService
         a.Horas = req.Horas;
         a.Estado = (EstadoActividad)req.Estado;
         a.Comentario = req.Comentario?.Trim();
+        a.SistemaId = sistemaId;
+        a.ProveedorId = proveedorId;
+        a.TipoSolucion = tipoSolucion;
 
         await _db.SaveChangesAsync(ct);
         await _db.Entry(a).Reference(x => x.Tecnico).LoadAsync(ct);
+        await _db.Entry(a).Reference(x => x.Sistema).LoadAsync(ct);
+        await _db.Entry(a).Reference(x => x.Proveedor).LoadAsync(ct);
         return Map(a);
     }
 
@@ -354,7 +382,8 @@ public class TrabajoDiarioService : ITrabajoDiarioService
     }
 
     public async Task<IReadOnlyList<ActividadDto>> ActividadesDeTicketAsync(string refNum, CancellationToken ct = default)
-        => await _db.ActividadesDiarias.AsNoTracking().Include(a => a.Tecnico)
+        => await _db.ActividadesDiarias.AsNoTracking()
+            .Include(a => a.Tecnico).Include(a => a.Sistema).Include(a => a.Proveedor)
             .Where(a => a.RefNumVinculado == refNum || a.NoSolicitud == refNum)
             .OrderByDescending(a => a.Fecha).Select(a => Map(a)).ToListAsync(ct);
 
@@ -366,6 +395,10 @@ public class TrabajoDiarioService : ITrabajoDiarioService
         NoSolicitud = a.NoSolicitud, RefNumVinculado = a.RefNumVinculado, TipoVinculo = a.TipoVinculo,
         Proyecto = a.Proyecto, Horas = a.Horas, Estado = (int)a.Estado, EstadoTexto = EstadoTexto(a.Estado),
         Comentario = a.Comentario, CreadoPor = a.CreadoPor, CreadoEn = a.CreadoEn,
+        SistemaId = a.SistemaId, Sistema = a.Sistema?.Nombre,
+        ProveedorId = a.ProveedorId, Proveedor = a.Proveedor?.Nombre,
+        TipoSolucion = (int)a.TipoSolucion,
+        TipoSolucionTexto = a.TipoSolucion == TipoSolucion.NoEspecificado ? null : TipoSolucionInfo.Nombre(a.TipoSolucion),
         ModificadoPor = a.ModificadoPor, ModificadoEn = a.ModificadoEn
     };
 }

@@ -8,6 +8,17 @@
     <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="css/app-v2.css" />
+    <script>
+        // Modo noche: se aplica antes de pintar para evitar el destello claro.
+        // Preferencia guardada (ta-tema = oscuro | claro); si no hay, la del sistema operativo.
+        (function () {
+            try {
+                var t = localStorage.getItem('ta-tema');
+                if (t === 'oscuro' || (t === null && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches))
+                    document.documentElement.classList.add('ta-oscuro');
+            } catch (e) { /* sin almacenamiento: tema claro */ }
+        })();
+    </script>
 </head>
 <body>
     <div id="app">

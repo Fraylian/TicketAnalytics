@@ -94,3 +94,36 @@ public class ControlVencimientosDto
     /// <summary>Tabla "Vencen primero": las próximas a vencer, orden ascendente.</summary>
     public List<OrdenCambioConTicketsDto> VencenPrimero { get; set; } = new();
 }
+
+/// <summary>Vista "⚠ Fulano — N OC vencen este mes": una fila por analista del grupo.</summary>
+public class AtencionPorPersonaDto
+{
+    public int Anio { get; set; }
+    public int Mes { get; set; }
+    public string Periodo { get; set; } = "";
+    public int DiasSinAvance { get; set; }
+    public DateTime GeneradoEn { get; set; }
+    public List<AtencionPersonaDto> Personas { get; set; } = new();
+}
+
+public class AtencionPersonaDto
+{
+    public string Analista { get; set; } = "";
+    public string? UserId { get; set; }
+    public string? Uuid { get; set; }
+    /// <summary>critico | atencion | ok</summary>
+    public string Nivel { get; set; } = "ok";
+
+    // Órdenes de cambio ABIERTAS
+    public int OcAbiertas { get; set; }
+    public int OcVencidas { get; set; }
+    public int OcVencenHoy { get; set; }
+    public int OcVencenSemana { get; set; }
+    public int OcVencenMes { get; set; }
+
+    // Tickets abiertos
+    public int TicketsAbiertos { get; set; }
+    public int TicketsSlaVencido { get; set; }
+    public int TicketsSinGestion { get; set; }
+    public int TicketsSinAvance { get; set; }
+}

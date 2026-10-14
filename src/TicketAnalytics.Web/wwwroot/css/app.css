@@ -6,6 +6,7 @@
     /* ===== Identidad Banco Santa Cruz ===== */
     --bsc-azul: #15528E;
     --bsc-azul-profundo: #0F3D6B;
+    --bsc-azul-texto: #0F3D6B;     /* texto con color de marca (números de caso, títulos); se aclara en modo noche */
     --bsc-azul-suave: #EAF2F9;
     --bsc-verde: #76B82A;
     --bsc-verde-suave: #EFF7E4;
@@ -102,7 +103,7 @@
 .ta-actualizando::after {
     content: "";
     position: absolute; inset: 0;
-    background: rgba(255, 255, 255, .45);
+    background: var(--velo-actualizando, rgba(255, 255, 255, .45));
     border-radius: inherit;
     pointer-events: none;
     transition: opacity var(--transition-fast);
@@ -186,7 +187,7 @@ html, body {
 /* ===== SIGNATURE: barra de riesgo SLA ===== */
 .barra-riesgo {
     display: flex; height: 44px; border-radius: 10px; overflow: hidden;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,.08); background: #EDF1F5;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,.08); background: var(--bsc-superficie-3);
 }
 .barra-riesgo > div {
     display: flex; align-items: center; justify-content: center;
@@ -264,7 +265,7 @@ html, body {
 
 /* Barra de progreso de tiempo consumido (apertura -> vencimiento) */
 .barra-tiempo {
-    height: 6px; border-radius: 3px; background: #EDF1F5; overflow: hidden; margin-top: 6px;
+    height: 6px; border-radius: 3px; background: var(--bsc-superficie-3); overflow: hidden; margin-top: 6px;
 }
 .barra-tiempo > span { display: block; height: 100%; border-radius: 3px; transition: width .4s ease; }
 .tiempo-ok      { background: var(--op-cumplido); }
@@ -339,7 +340,7 @@ html, body {
     display: inline-flex; align-items: center; gap: var(--sp-1);
     padding: 4px 10px;
     background: var(--bsc-azul-suave);
-    color: var(--bsc-azul-profundo);
+    color: var(--bsc-azul-texto);
     border: 1px solid var(--bsc-borde);
     border-radius: var(--radius-pill);
     font-size: .8rem; font-weight: 600;
@@ -382,7 +383,7 @@ html, body {
     background: var(--bsc-superficie-2);
 }
 .ta-caso:hover { background: var(--bsc-azul-suave); }
-.ta-caso-ref { font-weight: 700; color: var(--bsc-azul-profundo); }
+.ta-caso-ref { font-weight: 700; color: var(--bsc-azul-texto); }
 .ta-caso-nota {
     margin-top: var(--sp-1); font-size: .85rem; color: var(--texto-secundario);
     white-space: pre-wrap; overflow-wrap: anywhere;

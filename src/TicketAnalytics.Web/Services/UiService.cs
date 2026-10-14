@@ -51,6 +51,20 @@ public sealed class UiService : IAsyncDisposable
         catch (JSException) { }
     }
 
+    /// <summary>true si la app arrancó en modo noche (preferencia guardada o la del sistema).</summary>
+    public async Task<bool> EsTemaOscuroAsync()
+    {
+        try { return await (await Modulo()).InvokeAsync<string>("temaActual") == "oscuro"; }
+        catch (JSException) { return false; }
+    }
+
+    /// <summary>Cambia el tema de la página y guarda la preferencia.</summary>
+    public async Task AplicarTemaAsync(bool oscuro)
+    {
+        try { await (await Modulo()).InvokeVoidAsync("aplicarTema", oscuro ? "oscuro" : "claro"); }
+        catch (JSException) { }
+    }
+
     /// <summary>granted | denied | default | no-soportado</summary>
     public async Task<string> PermisoNotificacionesAsync()
     {

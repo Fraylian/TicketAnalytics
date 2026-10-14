@@ -197,6 +197,11 @@ else
             </div>
         }
     </MudTabPanel>
+
+    @* Al final para no mover los índices de las pestañas existentes (?vista=... usa 0..3). *@
+    <MudTabPanel Text="Atención por persona" Icon="@Icons.Material.Filled.PriorityHigh">
+        <AtencionPorPersona Anio="_anio" Mes="_mes" />
+    </MudTabPanel>
 </MudTabs>
 }
 
@@ -241,9 +246,11 @@ else
                 case "sinanalista": AplicarRapido("sinanalista"); _tab = 2; break;
                 case "listado": _tab = 2; break;
                 case "vencimientos": _tab = 1; break;
+                case "atencion": _tab = 4; break;
             }
         }
         if (q.TryGetValue("analista", out var a)) { _analista = a; _filtro.AsignatarioNombre = a; }
+        if (q.TryGetValue("texto", out var tx) && !string.IsNullOrWhiteSpace(tx)) _filtro.Texto = tx;
         await RecargarTodo();
     }
 
@@ -417,9 +424,8 @@ else
         FechaDesde = new DateTime(_anio, _mes, 1),
         FechaHasta = null,
         AsignatarioNombre = _filtro.AsignatarioNombre,
-        ComplejidadOC = _filtro.ComplejidadOC,
-        Page = 1,
-        PageSize = 500
+        ComplejidadOC = _filtro.ComplejidadOC
+        // Sin PageSize: el tablero se agrupa en el servidor y no devuelve filas.
     };
 
     // ===== Opciones de gráficos =====

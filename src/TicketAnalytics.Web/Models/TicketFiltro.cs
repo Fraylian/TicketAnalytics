@@ -2,7 +2,8 @@ namespace TicketAnalytics.Web.Models;
 
 public class TicketFiltro
 {
-    public DateTime? FechaDesde { get; set; } = new DateTime(2026, 1, 1);
+    /// <summary>Sin valor: el servidor aplica la fecha base configurada (General.FechaBase).</summary>
+    public DateTime? FechaDesde { get; set; }
     public DateTime? FechaHasta { get; set; }
     public string? TipoCaso { get; set; }
     public List<string>? Categorias { get; set; }

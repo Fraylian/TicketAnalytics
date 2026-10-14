@@ -15,7 +15,8 @@ public class GestionCasoRequest
     public DateTime? ProximoSeguimiento { get; set; }
 
     // Clasificación estructurada de la gestión
-    public int? Sistema { get; set; }
+    public int? Sistema { get; set; }                   // SistemaId del catálogo (0 = quitar)
+    public int? TipoCorreccionId { get; set; }          // catálogo TipoCorreccion (0 = quitar)
     public int? TipoSolucion { get; set; }
     public int? TipoActualizacionDatos { get; set; }
     public string? AreaDestino { get; set; }

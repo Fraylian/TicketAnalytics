@@ -1,10 +1,12 @@
-@* Campana de alertas de vencimiento (barra superior).
-   - Al cargar o recargar la aplicación muestra un aviso emergente con los tickets cuyo SLA
-     vence en la próxima hora (ReglaAlertas.MinutosAntelacion).
+@* Campana de alertas de vencimiento (barra superior). Escalonada:
+   - Aviso temprano: tickets cuyo SLA vence dentro de ReglaAlertas.MinutosAvisoTemprano (4 h por defecto).
+   - Urgente: faltando ReglaAlertas.MinutosAntelacion (60 min) o menos. Crítico: 15 min o menos.
+   - Al cargar o recargar la aplicación muestra un aviso emergente con todos los de la ventana.
    - Mientras la app sigue abierta, vuelve a consultar cada ReglaAlertas.IntervaloConsulta y avisa
-     (snackbar + notificación del escritorio) cuando un ticket nuevo entra en esa ventana.
+     (snackbar + notificación del escritorio) cuando un ticket entra en la ventana o SUBE de nivel.
    - Solo lee la bandeja del equipo (API); no escribe nada. *@
 @inject TicketAnalyticsApi Api
+@inject CatalogoCache Cache
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject UiService Ui
@@ -12,25 +14,29 @@
 @implements IDisposable
 
 <MudTooltip Text="@TextoTooltip">
-    <MudBadge Content="@_proximos.Count" Color="Color.Error" Overlap="true" Visible="@(_proximos.Count > 0)" Class="mr-3">
+    <MudBadge Content="@_proximos.Count" Color="@(Urgentes > 0 ? Color.Error : Color.Warning)" Overlap="true" Visible="@(_proximos.Count > 0)" Class="mr-3">
         <MudIconButton Icon="@(_proximos.Count > 0 ? Icons.Material.Filled.NotificationsActive : Icons.Material.Filled.NotificationsNone)"
-                       Color="Color.Inherit" Class="@(_proximos.Count > 0 ? "ta-campana" : "")"
+                       Color="Color.Inherit" Class="@(Urgentes > 0 ? "ta-campana" : "")"
                        aria-label="Alertas de vencimiento" OnClick="AbrirAviso" />
     </MudBadge>
 </MudTooltip>
 
 @code {
     private List<AlertaTicket> _proximos = new();
-    private readonly HashSet<string> _avisados = new();
+    /// <summary>Nivel con el que ya se avisó cada ticket: se vuelve a avisar solo si sube de nivel.</summary>
+    private readonly Dictionary<string, string> _avisados = new();
+    private int Urgentes => _proximos.Count(t => t.Nivel != "medio");
     private Timer? _timer;
     private bool _consultando;
     private bool _dialogoAbierto;
 
+    private string Ventana => Formato.Duracion(ReglaAlertas.MinutosAvisoTemprano);
+
     private string TextoTooltip => _proximos.Count switch
     {
-        0 => $"Sin tickets que venzan en los próximos {ReglaAlertas.MinutosAntelacion} min",
-        1 => "1 ticket vence en la próxima hora",
-        _ => $"{_proximos.Count} tickets vencen en la próxima hora"
+        0 => $"Sin tickets que venzan en las próximas {Ventana}",
+        1 => $"1 ticket vence en las próximas {Ventana}" + (Urgentes > 0 ? " (urgente)" : ""),
+        _ => $"{_proximos.Count} tickets vencen en las próximas {Ventana}" + (Urgentes > 0 ? $" · {Urgentes} urgentes" : "")
     };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -38,6 +44,10 @@
         if (!firstRender) return;
         // Pequeña espera para no competir con la carga inicial de la página.
         await Task.Delay(1200);
+        // Umbrales configurados (Alertas.MinutosAntelacion / MinutosAvisoTemprano); si la API no responde, 60 y 240.
+        var p = await Cache.ParametrosAsync(Api);
+        ReglaAlertas.MinutosAntelacion = p.AlertasMinutosAntelacion;
+        ReglaAlertas.MinutosAvisoTemprano = p.AlertasMinutosAvisoTemprano;
         await Revisar(esCargaInicial: true);
         _timer = new Timer(_ => InvokeAsync(() => Revisar(esCargaInicial: false)), null,
                            ReglaAlertas.IntervaloConsulta, ReglaAlertas.IntervaloConsulta);
@@ -51,8 +61,10 @@
         {
             var bandeja = await Api.BandejaAnalistasAsync(new TicketFiltro { FechaDesde = new DateTime(DateTime.Today.Year, 1, 1) });
             _proximos = ReglaAlertas.Proximos(bandeja);
-            var nuevos = _proximos.Where(t => !_avisados.Contains(t.NoTicket)).ToList();
-            foreach (var t in nuevos) _avisados.Add(t.NoTicket);
+            // "Nuevos" = entran en la ventana o suben de nivel (aviso → urgente → crítico).
+            var nuevos = _proximos.Where(t => !_avisados.TryGetValue(t.NoTicket, out var n)
+                                              || ReglaAlertas.Gravedad(t.Nivel) > ReglaAlertas.Gravedad(n)).ToList();
+            foreach (var t in _proximos) _avisados[t.NoTicket] = t.Nivel;
             StateHasChanged();
 
             if (esCargaInicial && _proximos.Count > 0)
@@ -65,10 +77,13 @@
                 await NotificarEscritorio(nuevos);
                 foreach (var t in nuevos)
                 {
-                    Snackbar.Add($"Ticket {t.NoTicket} ({Formato.NombreCorto(t.Analista)}) {t.TextoRestante}", Severity.Warning, cfg =>
+                    var urgente = t.Nivel != "medio";
+                    Snackbar.Add($"Ticket {t.NoTicket} ({Formato.NombreCorto(t.Analista)}) {t.TextoRestante}",
+                                 t.Nivel == "critico" ? Severity.Error : urgente ? Severity.Warning : Severity.Info, cfg =>
                     {
-                        cfg.Icon = Icons.Material.Filled.AlarmOn;
-                        cfg.RequireInteraction = true;
+                        cfg.Icon = urgente ? Icons.Material.Filled.AlarmOn : Icons.Material.Filled.Schedule;
+                        // Los avisos tempranos se cierran solos; los urgentes esperan a que el usuario los vea.
+                        cfg.RequireInteraction = urgente;
                         cfg.Action = "Ver";
                         cfg.ActionColor = Color.Primary;
                         cfg.Onclick = _ => { Nav.NavigateTo($"/tickets?vista=todos&ticket={Uri.EscapeDataString(t.NoTicket)}"); return Task.CompletedTask; };
@@ -86,7 +101,10 @@
     private async Task NotificarEscritorio(List<AlertaTicket> tickets)
     {
         var primero = tickets[0];
-        var titulo = tickets.Count == 1 ? $"Ticket {primero.NoTicket} a punto de vencer" : $"{tickets.Count} tickets a punto de vencer";
+        var urgente = tickets.Any(t => t.Nivel != "medio");
+        var titulo = tickets.Count == 1
+            ? (urgente ? $"Ticket {primero.NoTicket} a punto de vencer" : $"Ticket {primero.NoTicket} vence pronto")
+            : (urgente ? $"{tickets.Count} tickets a punto de vencer" : $"{tickets.Count} tickets vencen pronto");
         var cuerpo = tickets.Count == 1
             ? $"{primero.Analista} · {primero.TextoRestante} (a las {primero.FechaVencimiento:HH:mm})"
             : string.Join(" · ", tickets.Take(4).Select(t => $"{t.NoTicket} {t.TextoRestante}"));
@@ -98,7 +116,7 @@
         if (_dialogoAbierto) return;
         if (_proximos.Count == 0)
         {
-            Snackbar.Add($"No hay tickets que venzan en los próximos {ReglaAlertas.MinutosAntelacion} minutos.", Severity.Success);
+            Snackbar.Add($"No hay tickets que venzan en las próximas {Ventana}.", Severity.Success);
             return;
         }
         _dialogoAbierto = true;

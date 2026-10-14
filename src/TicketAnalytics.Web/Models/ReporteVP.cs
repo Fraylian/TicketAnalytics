@@ -180,12 +180,23 @@ public class OpcionCatalogo
     public string Nombre { get; set; } = "";
 }
 
-/// <summary>Los tres catálogos de gestión en una sola respuesta.</summary>
+/// <summary>Sistema como opción: trae su proveedor para la selección encadenada.</summary>
+public class SistemaOpcion : OpcionCatalogo
+{
+    public int? ProveedorId { get; set; }
+    public string? Proveedor { get; set; }
+    public string? Color { get; set; }
+    public bool AplicaSubtipoActualizacion { get; set; }
+}
+
+/// <summary>Catálogos de gestión en una sola respuesta.</summary>
 public class CatalogosGestionDto
 {
-    public List<OpcionCatalogo> Sistemas { get; set; } = new();
+    public List<SistemaOpcion> Sistemas { get; set; } = new();
+    public List<OpcionCatalogo> Proveedores { get; set; } = new();
     public List<OpcionCatalogo> TiposSolucion { get; set; } = new();
     public List<OpcionCatalogo> TiposActualizacion { get; set; } = new();
+    public List<OpcionCatalogo> TiposCorreccion { get; set; } = new();
 }
 
 public class ConteoClasificacionDto
@@ -194,6 +205,107 @@ public class ConteoClasificacionDto
     public string Nombre { get; set; } = "";
     public int Cantidad { get; set; }
     public double Porcentaje { get; set; }
+    public string? Color { get; set; }
+    public string? Detalle { get; set; }
+}
+
+/// <summary>Un sistema con el desglose de las soluciones de sus casos.</summary>
+public class SistemaSolucionDto
+{
+    public int SistemaId { get; set; }
+    public string Sistema { get; set; } = "";
+    public string? Proveedor { get; set; }
+    public string? Color { get; set; }
+    public int Total { get; set; }
+    public int SinSolucion { get; set; }
+    public List<ConteoClasificacionDto> Soluciones { get; set; } = new();
+}
+
+/// <summary>Entradas contra cierres de un mes, para tickets y OC.</summary>
+public class FlujoMensualDto
+{
+    public string Periodo { get; set; } = "";
+    public int TicketsEntraron { get; set; }
+    public int TicketsCerrados { get; set; }
+    public int OcEntraron { get; set; }
+    public int OcCerradas { get; set; }
+}
+
+/// <summary>Caso pendiente de reportar / en espera del proveedor.</summary>
+public class CasoProveedorDto
+{
+    public long SeguimientoId { get; set; }
+    public string RefNum { get; set; } = "";
+    public string TipoOrigen { get; set; } = "cr";
+    public string? Sistema { get; set; }
+    public string? Proveedor { get; set; }
+    public string? Tecnico { get; set; }
+    public string Etapa { get; set; } = "";
+    public string? TicketProveedor { get; set; }
+    public DateTime Desde { get; set; }
+    public int Dias { get; set; }
+}
+
+/// <summary>Sistema del catálogo (administración).</summary>
+public class SistemaDto
+{
+    public int SistemaId { get; set; }
+    public string Nombre { get; set; } = "";
+    public string? Descripcion { get; set; }
+    public int? ProveedorId { get; set; }
+    public string? Proveedor { get; set; }
+    public int Criticidad { get; set; }
+    public bool Activo { get; set; } = true;
+    public int Orden { get; set; }
+    public string? Color { get; set; }
+    public bool AplicaSubtipoActualizacion { get; set; }
+    public int CasosClasificados { get; set; }
+}
+
+public class GuardarSistemaRequest
+{
+    public int? SistemaId { get; set; }
+    public string Nombre { get; set; } = "";
+    public string? Descripcion { get; set; }
+    public int? ProveedorId { get; set; }
+    public int Criticidad { get; set; }
+    public bool Activo { get; set; } = true;
+    public int Orden { get; set; }
+    public string? Color { get; set; }
+    public bool AplicaSubtipoActualizacion { get; set; }
+}
+
+public class TipoCorreccionDto
+{
+    public int TipoCorreccionId { get; set; }
+    public string Nombre { get; set; } = "";
+    public string? Descripcion { get; set; }
+    public bool Activo { get; set; } = true;
+    public int Orden { get; set; }
+    public int Usos { get; set; }
+}
+
+public class GuardarTipoCorreccionRequest
+{
+    public int? TipoCorreccionId { get; set; }
+    public string Nombre { get; set; } = "";
+    public string? Descripcion { get; set; }
+    public bool Activo { get; set; } = true;
+    public int Orden { get; set; }
+}
+
+public class ResultadoEliminacionDto
+{
+    public bool Eliminado { get; set; }
+    public bool Desactivado { get; set; }
+    public string Mensaje { get; set; } = "";
+}
+
+/// <summary>Niveles de criticidad de un sistema (0..3).</summary>
+public static class CriticidadSistema
+{
+    public static readonly (int Valor, string Nombre)[] Todos = { (0, "Sin definir"), (1, "Baja"), (2, "Media"), (3, "Alta") };
+    public static string Nombre(int v) => Todos.FirstOrDefault(x => x.Valor == v).Nombre ?? "Sin definir";
 }
 
 /// <summary>Indicadores derivados de la clasificación estructurada.</summary>
@@ -202,6 +314,10 @@ public class IndicadoresGestionDto
     public int TotalGestionados { get; set; }
     public List<ConteoClasificacionDto> PorSistema { get; set; } = new();
     public List<ConteoClasificacionDto> PorTipoSolucion { get; set; } = new();
+    public List<ConteoClasificacionDto> PorTipoCorreccion { get; set; } = new();
+    public List<ConteoClasificacionDto> PorCausaRaiz { get; set; } = new();
+    public List<SistemaSolucionDto> SistemasConSolucion { get; set; } = new();
+    public int SinSistema { get; set; }
     public List<ConteoClasificacionDto> PorTipoActualizacionDatos { get; set; } = new();
     public int TotalActualizacionesDatos { get; set; }
     public int ReportadosProveedor { get; set; }

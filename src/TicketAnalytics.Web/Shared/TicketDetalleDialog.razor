@@ -83,7 +83,7 @@
             @if (_seg.VaReporteVP)
             {
                 <MudAlert Severity="Severity.Normal" Dense="true" Class="mt-2 mb-1" Icon="@Icons.Material.Filled.Summarize"
-                          Style="background:#F5F3FF;border:1px solid #DDD6FE">
+                          Style="background:color-mix(in srgb, #6B4EFF 8%, var(--bsc-superficie));border:1px solid color-mix(in srgb, #6B4EFF 28%, var(--bsc-superficie))">
                     <div class="d-flex align-center justify-space-between flex-wrap gap-2">
                         <span>
                             En el reporte de <b>@TextoPeriodo(_seg.PeriodoReporteVP)</b> · estado <b>@EstadosVP.Nombre(_seg.EstadoReporteVP)</b>

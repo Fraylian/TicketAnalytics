@@ -1,0 +1,77 @@
+@* Bloque principal del dashboard: un renglón por sistema, ordenado de mayor a menor.
+   El largo de la barra es proporcional a los casos del sistema y cada tramo es un tipo de
+   solución (mismo color en todo el panel). Clic en un sistema para ver sus casos. *@
+
+@if (!Sistemas.Any())
+{
+    <EmptyState Mensaje="@MensajeVacio" Icono="@Icons.Material.Filled.Dns" />
+}
+else
+{
+    var max = Math.Max(1, Sistemas.Max(s => s.Total));
+    <div class="ta-apilada">
+        @for (var idx = 0; idx < Sistemas.Count; idx++)
+        {
+            var s = Sistemas[idx];
+            var ancho = Math.Max(4, s.Total * 100.0 / max);
+            <div class="fila click" style="@($"--i:{idx}")" tabindex="0" role="button"
+                 title="@($"Ver los casos de {s.Sistema}")"
+                 @onclick="@(() => OnSeleccionar.InvokeAsync(s))"
+                 @onkeydown="@(e => Tecla(e, s))">
+                <div class="etq">
+                    <span class="ta-punto" style="@($"background:{s.Color ?? "var(--bsc-azul)"}")"></span>@s.Sistema
+                    <small>@(s.Proveedor ?? "Proveedor por asignar")</small>
+                </div>
+                <div class="barra" style="@($"width:{F(ancho)}%")">
+                    @foreach (var sol in s.Soluciones)
+                    {
+                        var w = sol.Cantidad * 100.0 / s.Total;
+                        <span class="seg" style="@($"--w:{F(w)}%;background:{ColorSolucion(sol.Valor)}")"
+                              title="@($"{sol.Nombre}: {sol.Cantidad} de {s.Total} ({Math.Round(w)}%)")">@(w >= 18 ? sol.Cantidad.ToString() : "")</span>
+                    }
+                    @if (s.SinSolucion > 0)
+                    {
+                        var w = s.SinSolucion * 100.0 / s.Total;
+                        <span class="seg" style="@($"--w:{F(w)}%;background:{ChartTheme.Gris}")"
+                              title="@($"Sin solución registrada: {s.SinSolucion} de {s.Total}")">@(w >= 18 ? s.SinSolucion.ToString() : "")</span>
+                    }
+                </div>
+                <div class="pct">@s.Total</div>
+            </div>
+        }
+    </div>
+    <div class="ta-leyenda">
+        @foreach (var sol in Leyenda)
+        {
+            <span><i style="@($"background:{ColorSolucion(sol.Valor)}")"></i>@sol.Nombre</span>
+        }
+        @if (Sistemas.Any(s => s.SinSolucion > 0))
+        {
+            <span><i style="@($"background:{ChartTheme.Gris}")"></i>Sin solución registrada</span>
+        }
+        <span class="ta-tenue">· Clic en un sistema para ver sus casos</span>
+    </div>
+}
+
+@code {
+    [Parameter] public List<SistemaSolucionDto> Sistemas { get; set; } = new();
+    [Parameter] public EventCallback<SistemaSolucionDto> OnSeleccionar { get; set; }
+    [Parameter] public string MensajeVacio { get; set; } = "Todavía no hay casos clasificados por sistema.";
+
+    /// <summary>Soluciones presentes, en orden de frecuencia total.</summary>
+    private List<ConteoClasificacionDto> Leyenda => Sistemas.SelectMany(s => s.Soluciones)
+        .GroupBy(x => x.Valor)
+        .Select(g => new ConteoClasificacionDto { Valor = g.Key, Nombre = g.First().Nombre, Cantidad = g.Sum(x => x.Cantidad) })
+        .OrderByDescending(x => x.Cantidad).ToList();
+
+    /// <summary>Color estable por tipo de solución (el mismo valor siempre tiene el mismo color).</summary>
+    public static string ColorSolucion(int valor)
+        => ChartTheme.Paleta[(valor == 99 ? ChartTheme.Paleta.Count - 1 : Math.Max(0, valor - 1)) % ChartTheme.Paleta.Count];
+
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task Tecla(KeyboardEventArgs e, SistemaSolucionDto s)
+    {
+        if (e.Key is "Enter" or " ") await OnSeleccionar.InvokeAsync(s);
+    }
+}

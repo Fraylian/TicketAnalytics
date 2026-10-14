@@ -29,8 +29,10 @@ public class ResultadoSla
 /// </summary>
 public static class CalculoSla
 {
+    /// <param name="pctRiesgo">% de SLA consumido a partir del cual un ticket abierto está "próximo a vencer"
+    /// (parámetro Ticket.PctRiesgoSla de la base local).</param>
     public static ResultadoSla Calcular(int? openDateEpoch, int? closeDateEpoch,
-        int? timeToViolationEpoch, int? slaViolStatus, DateTime? ahora = null)
+        int? timeToViolationEpoch, int? slaViolStatus, DateTime? ahora = null, int pctRiesgo = 80)
     {
         var r = new ResultadoSla
         {
@@ -77,7 +79,7 @@ public static class CalculoSla
         else
         {
             r.Estado = EstadoSla.EnCurso;
-            r.ProximoAVencer = r.PctConsumido >= 80;   // consumido 80%+ = proximo a vencer
+            r.ProximoAVencer = r.PctConsumido >= pctRiesgo;   // consumido pctRiesgo%+ = próximo a vencer
         }
         return r;
     }

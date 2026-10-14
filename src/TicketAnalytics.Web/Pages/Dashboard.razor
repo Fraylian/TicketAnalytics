@@ -4,6 +4,7 @@
 @inject IDialogService DialogService
 @inject UiService Ui
 @inject ISnackbar Snackbar
+@inject FileDownloadService Descargas
 
 <PageTitle>Panel · TicketAnalytics</PageTitle>
 
@@ -29,23 +30,257 @@
 else if (_cargando && !_cargadoAlgunaVez)
 {
     <MudGrid Spacing="3" Class="mt-2">
-        <MudItem xs="12" md="3"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="250px" Animation="Animation.Wave" /></MudItem>
-        <MudItem xs="12" md="9"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="250px" Animation="Animation.Wave" /></MudItem>
+        <MudItem xs="12" md="8"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="340px" Animation="Animation.Wave" /></MudItem>
+        <MudItem xs="12" md="4"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="340px" Animation="Animation.Wave" /></MudItem>
         @for (var i = 0; i < 4; i++)
         {
             <MudItem xs="12" sm="6" md="3"><KpiCard Cargando="true" /></MudItem>
         }
-        <MudItem xs="12" md="8"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="340px" Animation="Animation.Wave" /></MudItem>
-        <MudItem xs="12" md="4"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="340px" Animation="Animation.Wave" /></MudItem>
     </MudGrid>
 }
 else
 {
     <div class="@(_cargando ? "ta-actualizando" : "")" @key="_version">
 
-    @* ================= 1. ESTADO GENERAL ================= *@
-    <SeccionBloque Id="b-estado" Titulo="Estado general" Icono="@Icons.Material.Filled.MonitorHeart" Primero="true"
-                   Bajada="Cumplimiento de SLA y volumen del período filtrado" />
+    @* ================= 1. SISTEMAS AFECTADOS (lo primero) ================= *@
+    <SeccionBloque Id="b-sistemas" Titulo="Sistemas afectados" Icono="@Icons.Material.Filled.Dns" Primero="true"
+                   Bajada="Qué sistemas generan más casos y qué solución les estamos dando · según la clasificación registrada en la gestión">
+        <Acciones>
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Custom.FileFormats.FileExcel"
+                       Disabled="_exportando" OnClick="ExportarSistemas">@(_exportando ? "Generando…" : "Exportar a Excel")</MudButton>
+        </Acciones>
+    </SeccionBloque>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" lg="8">
+            <div class="panel ta-alto-total">
+                <div class="panel-cab">
+                    <div>
+                        <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.Dns" Size="Size.Small" Color="Color.Primary" /> Casos por sistema y solución aplicada</h2>
+                        <div class="panel-sub">De mayor a menor · cada color es un tipo de solución</div>
+                    </div>
+                </div>
+                <SistemasSolucion Sistemas="_ind.SistemasConSolucion" OnSeleccionar="@(s => Nav.NavigateTo($"/tickets?vista=todos&sistema={s.SistemaId}"))" />
+                @if (_ind.SinSistema > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Text" Class="mt-3">
+                        @_ind.SinSistema @(_ind.SinSistema == 1 ? "caso gestionado no tiene" : "casos gestionados no tienen") sistema asignado: clasifícalos en Registrar gestión para que cuenten aquí.
+                    </MudAlert>
+                }
+            </div>
+        </MudItem>
+        <MudItem xs="12" lg="4">
+            <MudGrid Spacing="3" Class="ta-stagger">
+                <MudItem xs="6" lg="12">
+                    <KpiCard Titulo="Casos clasificados" Valor="@ClasificadosPorSistema.ToString()" Icono="@Icons.Material.Filled.Category" Acento="azul"
+                             Progreso="@Pct(ClasificadosPorSistema, _ind.TotalGestionados)"
+                             Nota="@($"de {_ind.TotalGestionados} gestionados tienen sistema")" TextoAccion="Ver seguimiento"
+                             OnClick="@(() => Nav.NavigateTo("/seguimiento"))" />
+                </MudItem>
+                <MudItem xs="6" lg="12">
+                    <KpiCard Titulo="Sistema con más casos" Valor="@(_ind.SistemasConSolucion.FirstOrDefault()?.Sistema ?? "—")"
+                             Icono="@Icons.Material.Filled.TrendingUp" Acento="riesgo"
+                             Nota="@SistemaPrincipalNota" />
+                </MudItem>
+                <MudItem xs="12">
+                    <KpiCard Titulo="Sistemas con casos" Valor="@_ind.SistemasConSolucion.Count.ToString()" Icono="@Icons.Material.Filled.Apps" Acento="neutro"
+                             Nota="administra sistemas y proveedores" TextoAccion="Administrar"
+                             OnClick="@(() => Nav.NavigateTo("/proveedores?tab=sistemas"))" />
+                </MudItem>
+            </MudGrid>
+        </MudItem>
+    </MudGrid>
+
+    @* ================= 2. TIPOS DE SOLUCIÓN ================= *@
+    <SeccionBloque Id="b-soluciones" Titulo="Tipos de solución" Icono="@Icons.Material.Filled.Build"
+                   Bajada="Qué tipo de trabajo estamos haciendo realmente · clic para ver los tickets" />
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <ChartPanel Titulo="Soluciones más aplicadas" Icono="@Icons.Material.Filled.Build" Subtitulo="@($"{_ind.TotalGestionados} casos gestionados en el período")">
+                <BarList Items="@ItemsSolucion(_ind.PorTipoSolucion)" OnSeleccionar="@(i => Nav.NavigateTo($"/tickets?vista=todos&tiposolucion={i.Clave}"))"
+                         MensajeVacio="Todavía no hay casos clasificados por tipo de solución." />
+            </ChartPanel>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <ChartPanel Titulo="@($"Actualizaciones de datos · {_ind.TotalActualizacionesDatos} casos")" Icono="@Icons.Material.Filled.ManageAccounts"
+                        Subtitulo="Desglose por tipo (sistemas que lo exigen, como BSC en Línea)">
+                <BarList Items="@ItemsClasificacion(_ind.PorTipoActualizacionDatos)" Color="var(--dato-3)"
+                         MensajeVacio="Sin actualizaciones de datos con tipo registrado en el período." />
+            </ChartPanel>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <ChartPanel Titulo="Causas raíz más repetidas" Icono="@Icons.Material.Filled.Troubleshoot"
+                        Subtitulo="@($"{_ind.ConCausaRaiz} con causa raíz · {_ind.SinCausaRaiz} sin identificar")">
+                <BarList Items="@ItemsClasificacion(_ind.PorCausaRaiz)" Color="var(--dato-4)" MaxVisibles="6"
+                         MensajeVacio="Todavía no hay causas raíz registradas." />
+            </ChartPanel>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <ChartPanel Titulo="Tipos de corrección" Icono="@Icons.Material.Filled.Tune" Subtitulo="Catálogo administrable en Proveedores · Tipos de corrección">
+                <BarList Items="@ItemsClasificacion(_ind.PorTipoCorreccion)" Color="var(--dato-2)"
+                         MensajeVacio="Sin tipos de corrección registrados (define el catálogo en Proveedores)." />
+            </ChartPanel>
+        </MudItem>
+    </MudGrid>
+
+    @* ================= 3. DISTRIBUCIÓN DE CARGA ================= *@
+    <SeccionBloque Id="b-carga" Titulo="Distribución de carga de trabajo" Icono="@Icons.Material.Filled.ShowChart"
+                   Bajada="Por mes, lo que entró contra lo que se cerró: si los cierres van por debajo, el equipo está acumulando" />
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <ChartPanel Titulo="Tickets: entraron contra se cerraron" Icono="@Icons.Material.Filled.ConfirmationNumber" Vacio="@(!_flujo.Any())"
+                        Subtitulo="@BalanceTexto(TkEntraron, TkCerrados)" MensajeVacio="Sin movimiento en el período.">
+                <ApexChart TItem="FlujoMensualDto" Options="_opcionesFlujoTk" Height="290">
+                    <ApexPointSeries TItem="FlujoMensualDto" Items="_flujo" Name="Entraron"
+                                     XValue="@(p => Formato.Mes(p.Periodo))" YValue="@(p => (decimal)p.TicketsEntraron)" SeriesType="SeriesType.Bar" />
+                    <ApexPointSeries TItem="FlujoMensualDto" Items="_flujo" Name="Se cerraron"
+                                     XValue="@(p => Formato.Mes(p.Periodo))" YValue="@(p => (decimal)p.TicketsCerrados)" SeriesType="SeriesType.Bar" />
+                </ApexChart>
+            </ChartPanel>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <ChartPanel Titulo="Órdenes de cambio: entraron contra se cerraron" Icono="@Icons.Material.Filled.ChangeCircle" Vacio="@(!_flujo.Any())"
+                        Subtitulo="@BalanceTexto(OcEntraron, OcCerradas)" MensajeVacio="Sin movimiento en el período.">
+                <ApexChart TItem="FlujoMensualDto" Options="_opcionesFlujoOc" Height="290">
+                    <ApexPointSeries TItem="FlujoMensualDto" Items="_flujo" Name="Entraron"
+                                     XValue="@(p => Formato.Mes(p.Periodo))" YValue="@(p => (decimal)p.OcEntraron)" SeriesType="SeriesType.Bar" />
+                    <ApexPointSeries TItem="FlujoMensualDto" Items="_flujo" Name="Se cerraron"
+                                     XValue="@(p => Formato.Mes(p.Periodo))" YValue="@(p => (decimal)p.OcCerradas)" SeriesType="SeriesType.Bar" />
+                </ApexChart>
+            </ChartPanel>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="Tickets que entraron" Valor="@TkEntraron.ToString()" Icono="@Icons.Material.Filled.MoveToInbox" Acento="azul"
+                     Sparkline="@Spark(f => f.TicketsEntraron)" Nota="aperturas del período" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="Tickets cerrados" Valor="@TkCerrados.ToString()" Icono="@Icons.Material.Filled.TaskAlt"
+                     Acento="@(TkCerrados >= TkEntraron ? "cumplido" : "riesgo")" Sparkline="@Spark(f => f.TicketsCerrados)"
+                     Nota="@(TkCerrados >= TkEntraron ? "absorbiendo la demanda" : "acumulando")" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="OC que entraron" Valor="@OcEntraron.ToString()" Icono="@Icons.Material.Filled.MoveToInbox" Acento="azul"
+                     Sparkline="@Spark(f => f.OcEntraron)" Nota="aperturas del período" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="OC cerradas" Valor="@OcCerradas.ToString()" Icono="@Icons.Material.Filled.TaskAlt"
+                     Acento="@(OcCerradas >= OcEntraron ? "cumplido" : "riesgo")" Sparkline="@Spark(f => f.OcCerradas)"
+                     Nota="@(OcCerradas >= OcEntraron ? "absorbiendo la demanda" : "acumulando")" />
+        </MudItem>
+    </MudGrid>
+
+    @* ================= 4. VENCIMIENTOS POR PERSONA ================= *@
+    <SeccionBloque Id="b-vencimientos" Titulo="Vencimientos por persona" Icono="@Icons.Material.Filled.ChangeCircle"
+                   Bajada="@($"Órdenes de cambio del año {DateTime.Today.Year}: quién tiene vencimientos encima · detalle a un clic")">
+        <Acciones>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward" Href="/ordenes-cambio">Ver órdenes</MudButton>
+        </Acciones>
+    </SeccionBloque>
+
+    <MudGrid Spacing="3" Class="ta-stagger">
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="OC vencidas" Valor="@_ocDash.Vencidas.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido"
+                     Nota="abiertas que pasaron su fecha" TextoAccion="Ver vencidas" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=vencidas"))" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="Vencen en 7 días" Valor="@_ocDash.VencenProximos7.ToString()" Icono="@Icons.Material.Filled.Schedule" Acento="riesgo"
+                     Nota="@($"{_ocDash.VencenEsteMes} vencen este mes")" TextoAccion="Ver próximas" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=semana"))" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="OC abiertas" Valor="@_ocDash.Abiertas.ToString()" Icono="@Icons.Material.Filled.FolderOpen" Acento="azul"
+                     Progreso="@_ocDash.PctCompletadas" Nota="@($"{_ocDash.PctCompletadas:0.#}% completadas")"
+                     TextoAccion="Ver listado" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=listado"))" />
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <KpiCard Titulo="OC sin analista" Valor="@_ocDash.SinAnalista.ToString()" Icono="@Icons.Material.Filled.PersonOff" Acento="neutro"
+                     Nota="pendientes de asignar" TextoAccion="Ver sin analista" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=sinanalista"))" />
+        </MudItem>
+    </MudGrid>
+
+    @* Quién tiene OC o tickets que requieren atención este mes; detalle a un clic. *@
+    <div class="mt-4">
+        <AtencionPorPersona />
+    </div>
+
+    @* ================= 5. ESTADO DE PROVEEDOR ================= *@
+    <SeccionBloque Id="b-proveedor" Titulo="Estado de proveedor" Icono="@Icons.Material.Filled.Business"
+                   Bajada="Casos reportados al proveedor y los que faltan por reportar · cuáles son, no solo cuántos">
+        <Acciones>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward" Href="/proveedores">Ver proveedores</MudButton>
+        </Acciones>
+    </SeccionBloque>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="3">
+            <MudGrid Spacing="3" Class="ta-stagger">
+                <MudItem xs="4" md="12">
+                    <KpiCard Titulo="Reportados al proveedor" Valor="@_ind.ReportadosProveedor.ToString()" Icono="@Icons.Material.Filled.Send" Acento="azul"
+                             Nota="con reporte enviado" TextoAccion="Ver matriz" OnClick="@(() => Nav.NavigateTo("/proveedores"))" />
+                </MudItem>
+                <MudItem xs="4" md="12">
+                    <KpiCard Titulo="Pendientes de reportar" Valor="@_ind.PendientesReportarProveedor.ToString()" Icono="@Icons.Material.Filled.PendingActions"
+                             Acento="@(_ind.PendientesReportarProveedor > 0 ? "riesgo" : "cumplido")" Nota="listado a la derecha" />
+                </MudItem>
+                <MudItem xs="4" md="12">
+                    <KpiCard Titulo="No requieren proveedor" Valor="@_ind.NoRequierenProveedor.ToString()" Icono="@Icons.Material.Filled.HomeRepairService"
+                             Acento="neutro" Nota="resueltos internamente" />
+                </MudItem>
+            </MudGrid>
+        </MudItem>
+        <MudItem xs="12" md="9">
+            <div class="panel ta-alto-total">
+                <div class="panel-cab">
+                    <div>
+                        <h2 class="panel-titulo"><MudIcon Icon="@Icons.Material.Filled.PendingActions" Size="Size.Small" Color="Color.Warning" /> Pendientes de reportar al proveedor</h2>
+                        <div class="panel-sub">Los más antiguos primero · clic en un ticket para abrirlo y registrar el reporte</div>
+                    </div>
+                </div>
+                @if (_pendientes.Items.Any())
+                {
+                    <MudTable Items="_pendientes.Items" Dense="true" Hover="true" Elevation="0" Breakpoint="Breakpoint.Sm"
+                              Class="ta-tabla-click" T="CasoProveedorDto" OnRowClick="@((TableRowClickEventArgs<CasoProveedorDto> a) => AbrirCaso(a.Item!))">
+                        <HeaderContent>
+                            <MudTh>Caso</MudTh>
+                            <MudTh>Sistema</MudTh>
+                            <MudTh>Proveedor</MudTh>
+                            <MudTh>Técnico</MudTh>
+                            <MudTh>Etapa</MudTh>
+                            <MudTh Style="text-align:right">Pendiente desde</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Caso"><b>@context.RefNum</b> <span class="ta-tenue">@(context.TipoOrigen == "chg" ? "OC" : "Ticket")</span></MudTd>
+                            <MudTd DataLabel="Sistema">@(context.Sistema ?? "Sin sistema")</MudTd>
+                            <MudTd DataLabel="Proveedor">@(context.Proveedor ?? (context.Sistema is null ? "—" : "Por asignar"))</MudTd>
+                            <MudTd DataLabel="Técnico">@(string.IsNullOrWhiteSpace(context.Tecnico) ? "—" : Formato.NombreCorto(context.Tecnico))</MudTd>
+                            <MudTd DataLabel="Etapa">@context.Etapa</MudTd>
+                            <MudTd DataLabel="Pendiente desde" Style="text-align:right">
+                                @context.Desde.ToLocalTime().ToString("dd/MM/yyyy")
+                                <span style="@($"color:{(context.Dias > 7 ? "var(--op-vencido)" : "var(--texto-tenue)")};font-weight:600")"> · @context.Dias d</span>
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    @if (_pendientes.TotalPages > 1)
+                    {
+                        <div class="d-flex justify-center mt-2">
+                            <MudPagination Count="_pendientes.TotalPages" Selected="_pendientes.Page" SelectedChanged="CambiarPaginaPendientes"
+                                           Size="Size.Small" Color="Color.Primary" />
+                        </div>
+                    }
+                }
+                else
+                {
+                    <EmptyState Icono="@Icons.Material.Filled.CheckCircle" ColorIcono="var(--op-cumplido)"
+                                Mensaje="No hay casos pendientes de reportar al proveedor." />
+                }
+            </div>
+        </MudItem>
+    </MudGrid>
+
+    @* ================= 6. ESTADO GENERAL (SLA) ================= *@
+    <SeccionBloque Id="b-estado" Titulo="Estado general" Icono="@Icons.Material.Filled.MonitorHeart"
+                   Bajada="Cumplimiento de SLA y volumen de tickets del período filtrado" />
 
     <MudGrid Spacing="3">
         <MudItem xs="12" md="3">
@@ -70,8 +305,7 @@ else
                 <MudItem xs="6" lg="3">
                     <KpiCard Titulo="Tickets del período" Valor="@_totalTickets.ToString()" Icono="@Icons.Material.Filled.ConfirmationNumber"
                              Acento="azul" Nota="@($"{_totalAbiertos} abiertos · {_totalCerrados} cerrados")"
-                             Sparkline="@SparkAperturas" TextoAccion="Ver tickets"
-                             OnClick="@(() => Nav.NavigateTo("/tickets?vista=todos"))" />
+                             TextoAccion="Ver tickets" OnClick="@(() => Nav.NavigateTo("/tickets?vista=todos"))" />
                 </MudItem>
                 <MudItem xs="6" lg="3">
                     <KpiCard Titulo="Abiertos ahora" Valor="@_totalAbiertos.ToString()" Icono="@Icons.Material.Filled.FolderOpen"
@@ -93,7 +327,7 @@ else
         </MudItem>
     </MudGrid>
 
-    @* ================= 2. RIESGO OPERATIVO ================= *@
+    @* ================= 7. RIESGO OPERATIVO ================= *@
     <SeccionBloque Id="b-riesgo" Titulo="Riesgo operativo" Icono="@Icons.Material.Filled.Warning"
                    Bajada="Lo que vence primero y dónde se concentran los incumplimientos" />
 
@@ -154,72 +388,22 @@ else
                                MensajeVacio="Sin tickets con SLA en el período." />
             </div>
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
+        <MudItem xs="12" sm="6" md="4">
             <KpiCard Titulo="Vencidos" Valor="@_slaVencidos.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido"
                      Nota="pasaron su fecha de SLA" TextoAccion="Ver vencidos" OnClick="@(() => Nav.NavigateTo("/tickets?vista=vencidos"))" />
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
+        <MudItem xs="12" sm="6" md="4">
             <KpiCard Titulo="Por vencer" Valor="@_slaRiesgo.ToString()" Icono="@Icons.Material.Filled.Schedule" Acento="riesgo"
                      Nota="80% o más del SLA consumido" TextoAccion="Abrir monitor" OnClick="@(() => Nav.NavigateTo("/sla"))" />
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
+        <MudItem xs="12" sm="6" md="4">
             <KpiCard Titulo="Cerrado con OC pendiente" Valor="@_totalCritico.ToString()" Icono="@Icons.Material.Filled.LinkOff"
                      Acento="@(_totalCritico > 0 ? "vencido" : "neutro")" Nota="@($"{_totalConOc} tickets con orden de cambio")"
                      TextoAccion="Revisar" OnClick="@(() => Nav.NavigateTo("/tickets?vista=ocpendiente"))" />
         </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <KpiCard Titulo="Pendientes de escalar" Valor="@_ind.PendientesReportarProveedor.ToString()" Icono="@Icons.Material.Filled.PendingActions"
-                     Acento="riesgo" Nota="requieren seguimiento con proveedor"
-                     TextoAccion="Ver casos" OnClick="@(() => Nav.NavigateTo("/tickets?vista=proveedor"))" />
-        </MudItem>
     </MudGrid>
 
-    @* ================= 3. FLUJO ================= *@
-    <SeccionBloque Id="b-flujo" Titulo="Flujo de trabajo" Icono="@Icons.Material.Filled.ShowChart"
-                   Bajada="Entradas contra cierres: si los cierres van por debajo, el represamiento crece" />
-
-    <MudGrid Spacing="3">
-        <MudItem xs="12" md="9">
-            <ChartPanel Titulo="Entradas contra cierres" Icono="@Icons.Material.Filled.AreaChart" Vacio="@(!_flujo.Any())"
-                        MensajeVacio="Sin movimiento en el período seleccionado.">
-                <ExtraHeader>
-                    <MudToggleGroup T="string" Value="_granularidad" ValueChanged="OnGranularidadChanged"
-                                    SelectionMode="SelectionMode.SingleSelection" Color="Color.Primary" Size="Size.Small" CheckMark="false">
-                        <MudToggleItem Value="@("dia")">Día</MudToggleItem>
-                        <MudToggleItem Value="@("semana")">Semana</MudToggleItem>
-                        <MudToggleItem Value="@("mes")">Mes</MudToggleItem>
-                    </MudToggleGroup>
-                </ExtraHeader>
-                <ChildContent>
-                    <ApexChart @ref="_chartFlujo" TItem="PuntoFlujo" Options="_opcionesFlujo" Height="310">
-                        <ApexPointSeries TItem="PuntoFlujo" Items="_flujo" Name="Recibidos"
-                                         XValue="@(p => p.Periodo)" YValue="@(p => p.Abiertos)" SeriesType="SeriesType.Area" />
-                        <ApexPointSeries TItem="PuntoFlujo" Items="_flujo" Name="Cerrados"
-                                         XValue="@(p => p.Periodo)" YValue="@(p => p.Cerrados)" SeriesType="SeriesType.Area" />
-                    </ApexChart>
-                </ChildContent>
-            </ChartPanel>
-        </MudItem>
-        <MudItem xs="12" md="3">
-            <MudGrid Spacing="3" Class="ta-stagger">
-                <MudItem xs="6" md="12">
-                    <KpiCard Titulo="Entradas" Valor="@EntradasFlujo.ToString()" Icono="@Icons.Material.Filled.MoveToInbox" Acento="azul"
-                             Sparkline="@SparkAperturas" Nota="tickets recibidos" />
-                </MudItem>
-                <MudItem xs="6" md="12">
-                    <KpiCard Titulo="Cierres" Valor="@CierresFlujo.ToString()" Icono="@Icons.Material.Filled.TaskAlt" Acento="cumplido"
-                             Sparkline="@SparkCierres" Nota="@($"tasa de cierre {Formato.Porcentaje(CierresFlujo, EntradasFlujo)}")" />
-                </MudItem>
-                <MudItem xs="12">
-                    <KpiCard Titulo="Balance neto" Valor="@($"{(CierresFlujo - EntradasFlujo >= 0 ? "+" : "")}{CierresFlujo - EntradasFlujo}")"
-                             Icono="@Icons.Material.Filled.Balance" Acento="@(CierresFlujo >= EntradasFlujo ? "cumplido" : "riesgo")"
-                             Nota="@(CierresFlujo >= EntradasFlujo ? "el represamiento baja" : "el represamiento sube")" />
-                </MudItem>
-            </MudGrid>
-        </MudItem>
-    </MudGrid>
-
-    @* ================= 4. EQUIPO ================= *@
+    @* ================= 8. EQUIPO (por asignatario) ================= *@
     <SeccionBloque Id="b-equipo" Titulo="Equipo" Icono="@Icons.Material.Filled.Groups"
                    Bajada="Carga y ritmo de cada analista del grupo">
         <Acciones>
@@ -254,8 +438,8 @@ else
         </MudItem>
     </MudGrid>
 
-    @* ================= 5. CATEGORÍAS ================= *@
-    <SeccionBloque Id="b-categorias" Titulo="Categorías" Icono="@Icons.Material.Filled.Category"
+    @* ================= 9. CATEGORÍAS Y ESTADOS ================= *@
+    <SeccionBloque Id="b-categorias" Titulo="Categorías y estados" Icono="@Icons.Material.Filled.Category"
                    Bajada="Reparto del volumen y estado de cada categoría del alcance" />
 
     <MudGrid Spacing="3">
@@ -298,129 +482,74 @@ else
             </div>
         </MudItem>
     </MudGrid>
-
-    @* ================= 6. ÓRDENES DE CAMBIO ================= *@
-    <SeccionBloque Id="b-oc" Titulo="Órdenes de cambio" Icono="@Icons.Material.Filled.ChangeCircle"
-                   Bajada="@($"Vencimientos de OC del año {DateTime.Today.Year} · clic para abrir el listado filtrado")">
-        <Acciones>
-            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" EndIcon="@Icons.Material.Filled.ArrowForward" Href="/ordenes-cambio">Ver órdenes</MudButton>
-        </Acciones>
-    </SeccionBloque>
-
-    <MudGrid Spacing="3" Class="ta-stagger">
-        <MudItem xs="6" md="3">
-            <KpiCard Titulo="OC vencidas" Valor="@_ocDash.Vencidas.ToString()" Icono="@Icons.Material.Filled.Error" Acento="vencido"
-                     Nota="abiertas que pasaron su fecha" TextoAccion="Ver vencidas" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=vencidas"))" />
-        </MudItem>
-        <MudItem xs="6" md="3">
-            <KpiCard Titulo="Vencen en 7 días" Valor="@_ocDash.VencenProximos7.ToString()" Icono="@Icons.Material.Filled.Schedule" Acento="riesgo"
-                     Nota="@($"{_ocDash.VencenEsteMes} vencen este mes")" TextoAccion="Ver próximas" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=semana"))" />
-        </MudItem>
-        <MudItem xs="6" md="3">
-            <KpiCard Titulo="OC abiertas" Valor="@_ocDash.Abiertas.ToString()" Icono="@Icons.Material.Filled.FolderOpen" Acento="azul"
-                     Progreso="@_ocDash.PctCompletadas" Nota="@($"{_ocDash.PctCompletadas:0.#}% completadas")"
-                     TextoAccion="Ver listado" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=listado"))" />
-        </MudItem>
-        <MudItem xs="6" md="3">
-            <KpiCard Titulo="OC sin analista" Valor="@_ocDash.SinAnalista.ToString()" Icono="@Icons.Material.Filled.PersonOff" Acento="neutro"
-                     Nota="pendientes de asignar" TextoAccion="Ver sin analista" OnClick="@(() => Nav.NavigateTo("/ordenes-cambio?vista=sinanalista"))" />
-        </MudItem>
-    </MudGrid>
-
-    @* ================= 7. CLASIFICACIÓN DE LA GESTIÓN ================= *@
-    <SeccionBloque Id="b-gestion" Titulo="Clasificación de la gestión" Icono="@Icons.Material.Filled.Insights"
-                   Bajada="Qué tipo de trabajos realizamos y dónde se presentan · clic para ver los tickets" />
-
-    <MudGrid Spacing="3">
-        <MudItem xs="6" lg="3">
-            <KpiCard Titulo="Casos gestionados" Valor="@_ind.TotalGestionados.ToString()" Icono="@Icons.Material.Filled.Assignment" Acento="azul"
-                     Nota="con gestión registrada en el período" TextoAccion="Ver seguimiento" OnClick="@(() => Nav.NavigateTo("/seguimiento"))" />
-        </MudItem>
-        <MudItem xs="6" lg="3">
-            <KpiCard Titulo="Reportados a proveedor" Valor="@_ind.ReportadosProveedor.ToString()" Icono="@Icons.Material.Filled.Business" Acento="azul"
-                     Nota="@($"{_ind.NoRequierenProveedor} resueltos internamente")" TextoAccion="Ver proveedores" OnClick="@(() => Nav.NavigateTo("/proveedores"))" />
-        </MudItem>
-        <MudItem xs="6" lg="3">
-            <KpiCard Titulo="Con causa raíz" Valor="@_ind.ConCausaRaiz.ToString()" Icono="@Icons.Material.Filled.Troubleshoot" Acento="cumplido"
-                     Progreso="@Pct(_ind.ConCausaRaiz, _ind.ConCausaRaiz + _ind.SinCausaRaiz)"
-                     Nota="@($"{_ind.SinCausaRaiz} sin identificar")" />
-        </MudItem>
-        <MudItem xs="6" lg="3">
-            <KpiCard Titulo="Reportados al VP" Valor="@_ind.ReportadosVP.ToString()" Icono="@Icons.Material.Filled.Summarize" Acento="violeta"
-                     Nota="@($"{_ind.ConJira} con JIRA")" TextoAccion="Ver reporte" OnClick="@(() => Nav.NavigateTo("/reporte-vp"))" />
-        </MudItem>
-
-        <MudItem xs="12" lg="6">
-            <ChartPanel Titulo="Tickets por sistema" Icono="@Icons.Material.Filled.Dns" Subtitulo="Sistemas con mayor cantidad de incidencias">
-                <BarList Items="@ItemsClasificacion(_ind.PorSistema)" Color="var(--dato-1)"
-                         OnSeleccionar="@(i => Nav.NavigateTo($"/tickets?vista=todos&sistema={i.Clave}"))"
-                         MensajeVacio="Todavía no hay casos clasificados por sistema." />
-            </ChartPanel>
-        </MudItem>
-        <MudItem xs="12" lg="6">
-            <ChartPanel Titulo="Tipos de solución más utilizados" Icono="@Icons.Material.Filled.Build" Subtitulo="Qué trabajos realizamos con mayor frecuencia">
-                <BarList Items="@ItemsClasificacion(_ind.PorTipoSolucion)" Color="var(--dato-2)"
-                         OnSeleccionar="@(i => Nav.NavigateTo($"/tickets?vista=todos&tiposolucion={i.Clave}"))"
-                         MensajeVacio="Todavía no hay casos clasificados por tipo de solución." />
-            </ChartPanel>
-        </MudItem>
-        @if (_ind.PorTipoActualizacionDatos.Any())
-        {
-            <MudItem xs="12">
-                <ChartPanel Titulo="@($"Actualizaciones de datos · {_ind.TotalActualizacionesDatos} casos")" Icono="@Icons.Material.Filled.ManageAccounts"
-                            Subtitulo="Desglose por tipo (BSC en Línea)">
-                    <BarList Items="@ItemsClasificacion(_ind.PorTipoActualizacionDatos)" Color="var(--dato-3)" />
-                </ChartPanel>
-            </MudItem>
-        }
-    </MudGrid>
     </div>
 }
 
 @code {
     private static readonly (string Id, string Texto)[] Bloques =
     {
-        ("b-estado", "Estado"), ("b-riesgo", "Riesgo"), ("b-flujo", "Flujo"), ("b-equipo", "Equipo"),
-        ("b-categorias", "Categorías"), ("b-oc", "Órdenes de cambio"), ("b-gestion", "Gestión")
+        ("b-sistemas", "Sistemas"), ("b-soluciones", "Soluciones"), ("b-carga", "Carga"), ("b-vencimientos", "Vencimientos"),
+        ("b-proveedor", "Proveedor"), ("b-estado", "SLA"), ("b-riesgo", "Riesgo"), ("b-equipo", "Equipo"), ("b-categorias", "Categorías")
     };
 
     private TicketFiltro _filtro = new();
     private bool _cargando = true;
     private bool _cargadoAlgunaVez;
+    private bool _exportando;
     private string? _error;
     private DateTime? _ultimaCarga;
     private int _version;
-    private string _granularidad = "mes";
 
     private IndicadoresGestionDto _ind = new();
     private ResumenSlaDto? _resumenSla;
     private List<SlaTicketDto> _proximos = new();
     private List<VolumenPorEstadoDto> _volumen = new();
-    private List<PuntoFlujo> _flujo = new();
+    private List<FlujoMensualDto> _flujo = new();
     private List<PuntoCategoria> _porCategoria = new();
     private List<PuntoAnalista> _porAnalista = new();
     private List<BarList.Item> _backlog = new();
     private List<StackedBar100.Fila> _slaCategorias = new();
     private OrdenCambioDashboardDto _ocDash = new();
+    private PagedResult<CasoProveedorDto> _pendientes = new();
     private string? _categoriaSel;
 
     private int _totalTickets, _totalAbiertos, _totalCerrados, _totalConOc, _totalCritico;
     private int _slaVencidos, _slaRiesgo, _slaEnCurso, _slaCumplidos;
     private decimal _pctSla;
 
-    private ApexChart<PuntoFlujo>? _chartFlujo;
-    private readonly ApexChartOptions<PuntoFlujo> _opcionesFlujo = ChartTheme.Area<PuntoFlujo>(new() { ChartTheme.Azul, ChartTheme.Verde });
+    private const int TamPendientes = 8;
+
+    private readonly ApexChartOptions<FlujoMensualDto> _opcionesFlujoTk = ChartTheme.Barras<FlujoMensualDto>(new() { ChartTheme.Azul, ChartTheme.Verde });
+    private readonly ApexChartOptions<FlujoMensualDto> _opcionesFlujoOc = ChartTheme.Barras<FlujoMensualDto>(new() { ChartTheme.Violeta, ChartTheme.Verde });
     private readonly ApexChartOptions<PuntoCategoria> _opcionesDona = ChartTheme.Dona<PuntoCategoria>(null, "Tickets");
     private readonly ApexChartOptions<PuntoAnalista> _opcionesBarras = ChartTheme.Barras<PuntoAnalista>(new() { ChartTheme.Azul, ChartTheme.Verde }, horizontal: true);
 
-    public class PuntoFlujo { public string Periodo { get; set; } = ""; public decimal Abiertos { get; set; } public decimal Cerrados { get; set; } }
     public class PuntoCategoria { public string Categoria { get; set; } = ""; public decimal Total { get; set; } }
     public class PuntoAnalista { public string Analista { get; set; } = ""; public string NombreCompleto { get; set; } = ""; public decimal Recibidos { get; set; } public decimal Cerrados { get; set; } }
 
-    private int EntradasFlujo => (int)_flujo.Sum(f => f.Abiertos);
-    private int CierresFlujo => (int)_flujo.Sum(f => f.Cerrados);
-    private List<double>? SparkAperturas => _flujo.Count > 1 ? _flujo.Select(f => (double)f.Abiertos).ToList() : null;
-    private List<double>? SparkCierres => _flujo.Count > 1 ? _flujo.Select(f => (double)f.Cerrados).ToList() : null;
+    private int TkEntraron => _flujo.Sum(f => f.TicketsEntraron);
+    private int TkCerrados => _flujo.Sum(f => f.TicketsCerrados);
+    private int OcEntraron => _flujo.Sum(f => f.OcEntraron);
+    private int OcCerradas => _flujo.Sum(f => f.OcCerradas);
+    private int ClasificadosPorSistema => _ind.SistemasConSolucion.Sum(s => s.Total);
+
+    private string SistemaPrincipalNota
+    {
+        get
+        {
+            var s = _ind.SistemasConSolucion.FirstOrDefault();
+            return s is null ? "sin casos clasificados" : $"{s.Total} casos · {s.Proveedor ?? "proveedor por asignar"}";
+        }
+    }
+
+    private List<double>? Spark(Func<FlujoMensualDto, int> v) => _flujo.Count > 1 ? _flujo.Select(f => (double)v(f)).ToList() : null;
+
+    private static string BalanceTexto(int entraron, int cerrados)
+    {
+        var neto = cerrados - entraron;
+        return entraron + cerrados == 0 ? "Sin movimiento"
+             : $"{entraron} entraron · {cerrados} se cerraron · balance {(neto >= 0 ? "+" : "")}{neto} ({(neto >= 0 ? "absorbiendo" : "acumulando")})";
+    }
 
     private static double Pct(int parte, int total) => total <= 0 ? 0 : Math.Round(parte * 100.0 / total, 1);
 
@@ -440,16 +569,19 @@ else
             var tProximos = Api.SlaProximosAVencerAsync(_filtro);
             var tCruce = Api.CruceOcAsync(_filtro);
             var tMetricas = Api.MetricasAnalistaAsync(_filtro);
-            var tTendencias = Api.TendenciasAsync(_filtro, _granularidad);
+            var tFlujo = Api.FlujoMensualAsync(_filtro);
             var tOcDash = Api.OcDashboardAsync(new OrdenCambioFiltro { AnioVencimiento = DateTime.Today.Year });
             var tInd = Api.IndicadoresGestionAsync(_filtro.FechaDesde, _filtro.FechaHasta);
-            await Task.WhenAll(tVolumen, tSla, tSlaCat, tProximos, tCruce, tMetricas, tTendencias, tOcDash, tInd);
+            var tPend = Api.ProveedorPendientesAsync(_filtro.FechaDesde, _filtro.FechaHasta, 1, TamPendientes);
+            await Task.WhenAll(tVolumen, tSla, tSlaCat, tProximos, tCruce, tMetricas, tFlujo, tOcDash, tInd, tPend);
 
             _ind = tInd.Result;
+            _pendientes = tPend.Result;
             _volumen = tVolumen.Result;
             _resumenSla = tSla.Result;
             _proximos = tProximos.Result.OrderBy(p => p.HorasRestantes ?? double.MaxValue).ToList();
             _ocDash = tOcDash.Result;
+            _flujo = tFlujo.Result;
             var cruce = tCruce.Result;
             var metricas = tMetricas.Result;
 
@@ -494,7 +626,6 @@ else
                                               Formato.ColorAvatar(m.Analista), $"{m.TotalRecibidos} recibidos"))
                 .ToList();
 
-            _flujo = AgruparFlujo(tTendencias.Result);
             _ultimaCarga = DateTime.Now;
             _cargadoAlgunaVez = true;
             _version++;
@@ -504,21 +635,26 @@ else
         finally { _cargando = false; StateHasChanged(); }
     }
 
-    private static List<PuntoFlujo> AgruparFlujo(List<TendenciaDto> t)
-        => t.GroupBy(x => x.Periodo).OrderBy(g => g.Key)
-            .Select(g => new PuntoFlujo { Periodo = g.Key, Abiertos = g.Sum(x => x.Abiertos), Cerrados = g.Sum(x => x.Cerrados) })
-            .ToList();
-
-    private async Task OnGranularidadChanged(string valor)
+    private async Task CambiarPaginaPendientes(int pagina)
     {
-        _granularidad = valor;
         try
         {
-            _flujo = AgruparFlujo(await Api.TendenciasAsync(_filtro, _granularidad));
-            StateHasChanged();
-            if (_chartFlujo is not null) await _chartFlujo.UpdateSeriesAsync(true);
+            _pendientes = await Api.ProveedorPendientesAsync(_filtro.FechaDesde, _filtro.FechaHasta, pagina, TamPendientes);
         }
         catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+    }
+
+    private async Task ExportarSistemas()
+    {
+        _exportando = true;
+        try
+        {
+            var bytes = await Api.SistemasExcelBytesAsync(_filtro.FechaDesde, _filtro.FechaHasta);
+            await Descargas.DescargarExcelAsync($"Casos_por_sistema_{DateTime.Now:yyyyMMdd_HHmm}.xlsx", bytes);
+        }
+        catch (ApiException ex) { Snackbar.Add(ex.MensajeUsuario, Severity.Error); }
+        catch (Exception) { Snackbar.Add("No pudimos generar el Excel.", Severity.Error); }
+        finally { _exportando = false; }
     }
 
     private void SeleccionarCategoria(string? categoria)
@@ -532,12 +668,22 @@ else
                    .OrderByDescending(i => i.Valor).ToList();
 
     private static List<BarList.Item> ItemsClasificacion(List<ConteoClasificacionDto> l)
-        => l.Select(x => new BarList.Item(x.Valor.ToString(), x.Nombre, x.Cantidad)).ToList();
+        => l.Select(x => new BarList.Item(x.Valor.ToString(), x.Nombre, x.Cantidad, x.Color, x.Detalle)).ToList();
+
+    /// <summary>Tipos de solución con el mismo color que usan en el bloque de sistemas.</summary>
+    private static List<BarList.Item> ItemsSolucion(List<ConteoClasificacionDto> l)
+        => l.Select(x => new BarList.Item(x.Valor.ToString(), x.Nombre, x.Cantidad, SistemasSolucion.ColorSolucion(x.Valor))).ToList();
 
     private void IrAAnalista(string? nombre)
     {
         if (string.IsNullOrWhiteSpace(nombre)) return;
         Nav.NavigateTo(UrlQuery.Url("/analistas", ("analista", nombre)));
+    }
+
+    private async Task AbrirCaso(CasoProveedorDto c)
+    {
+        if (c.TipoOrigen == "chg") { Nav.NavigateTo(UrlQuery.Url("/ordenes-cambio", ("vista", "listado"), ("texto", c.RefNum))); return; }
+        await AbrirTicket(c.RefNum);
     }
 
     private async Task AbrirTicket(string refNum)
